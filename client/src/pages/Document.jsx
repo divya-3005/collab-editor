@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import socket from '../socket/socket.js'
+import { transform, apply } from '../ot/transform.js'
 
 const API = 'http://localhost:3001/api'
 
@@ -15,18 +17,64 @@ export default function Document() {
   const [title, setTitle] = useState('Untitled Document')
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [connectedUsers, setConnectedUsers] = useState(1)
+
+  const revision = useRef(0)
+  const pendingOps = useRef([])
+  const isApplyingRemote = useRef(false)
 
   const editor = useEditor({
     extensions: [StarterKit],
     content: '',
     editorProps: {
       attributes: {
-        class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none min-h-screen p-8'
+        class: 'prose prose-sm sm:prose lg:prose-lg mx-auto focus:outline-none min-h-screen p-8'
       }
+    },
+    onUpdate: ({ editor }) => {
+      if (isApplyingRemote.current) return
+      socket.emit('content-update', {
+        documentId: id,
+        content: editor.getHTML()
+      })
     }
   })
 
-  // load document on mount
+  function stepToOperations(step, doc) {
+    const ops = []
+    const stepJson = step.toJSON()
+
+    if (stepJson.stepType === 'replace') {
+      const from = stepJson.from
+      const to = stepJson.to
+
+      // deletions
+      for (let i = to - 1; i >= from; i--) {
+        ops.push({ type: 'delete', position: from })
+      }
+
+      // insertions
+      if (stepJson.slice?.content) {
+        let pos = from
+        const extractText = (content) => {
+          content.forEach(node => {
+            if (node.type === 'text' && node.text) {
+              for (const char of node.text) {
+                ops.push({ type: 'insert', position: pos, character: char })
+                pos++
+              }
+            }
+            if (node.content) extractText(node.content)
+          })
+        }
+        extractText(stepJson.slice.content)
+      }
+    }
+
+    return ops
+  }
+
+  // load document
   useEffect(() => {
     const fetchDoc = async () => {
       try {
@@ -43,7 +91,42 @@ export default function Document() {
     if (editor) fetchDoc()
   }, [editor, id])
 
-  // auto save every 2 seconds after changes
+  // connect socket and join document room
+  useEffect(() => {
+    socket.connect()
+    socket.emit('join-document', id)
+
+    socket.on('document-revision', ({ revision: rev }) => {
+      revision.current = rev
+    })
+
+    socket.on('content-update', ({ content }) => {
+      if (!editor) return
+      isApplyingRemote.current = true
+      const { from, to } = editor.state.selection
+      editor.commands.setContent(content, false)
+      isApplyingRemote.current = false
+    })
+
+    socket.on('operation-ack', ({ revision: newRev }) => {
+      revision.current = newRev
+      pendingOps.current.shift()
+    })
+
+    socket.on('user-count', (count) => {
+      setConnectedUsers(count)
+    })
+
+    return () => {
+      socket.off('document-revision')
+      socket.off('operation')
+      socket.off('operation-ack')
+      socket.off('user-count')
+      socket.disconnect()
+    }
+  }, [editor, id])
+
+  // auto save every 2 seconds
   const saveDocument = useCallback(async () => {
     if (!editor) return
     setSaving(true)
@@ -73,7 +156,6 @@ export default function Document() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* top bar */}
       <div className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-10">
         <div className="flex items-center gap-4">
           <button
@@ -91,6 +173,10 @@ export default function Document() {
           />
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-green-400" />
+            <span className="text-xs text-gray-400">{connectedUsers} online</span>
+          </div>
           <span className="text-xs text-gray-400">
             {saving ? 'Saving...' : lastSaved ? `Saved at ${formatTime(lastSaved)}` : ''}
           </span>
@@ -103,7 +189,6 @@ export default function Document() {
         </div>
       </div>
 
-      {/* toolbar */}
       <div className="fixed top-12 left-0 right-0 bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-2 z-10">
         <button
           onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -151,7 +236,6 @@ export default function Document() {
         </button>
       </div>
 
-      {/* editor area */}
       <div className="pt-24 max-w-4xl mx-auto">
         <EditorContent editor={editor} />
       </div>

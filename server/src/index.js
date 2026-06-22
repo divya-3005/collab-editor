@@ -29,18 +29,50 @@ app.use('/api/auth', authRoutes);
 
 app.use('/api/documents', documentRoutes);
 
+import { getDocumentState, transformAgainstHistory, applyOperation } from './ot/server.js'
+
 io.on('connection', (socket) => {
-  console.log('user connected:', socket.id);
+  console.log('user connected:', socket.id)
 
   socket.on('join-document', (documentId) => {
-    socket.join(documentId);
-    console.log(`socket ${socket.id} joined document ${documentId}`);
-  });
+    socket.join(documentId)
+    const state = getDocumentState(documentId)
+    // send current revision to client so it knows where it stands
+    socket.emit('document-revision', { revision: state.revision })
+    console.log(`socket ${socket.id} joined document ${documentId}`)
+  })
+
+  socket.on('operation', ({ documentId, operation, revision }) => {
+    console.log(`operation received on doc ${documentId} at revision ${revision}`)
+
+    // transform against any operations that happened since client's revision
+    const transformed = transformAgainstHistory(operation, revision, documentId)
+
+    if (transformed === null) {
+      // op became a no-op after transformation, nothing to do
+      return
+    }
+
+    // apply to server state and get new revision
+    const newRevision = applyOperation(transformed, documentId)
+
+    // broadcast transformed op to everyone else in the room
+    socket.to(documentId).emit('operation', {
+      operation: transformed,
+      revision: newRevision
+    })
+
+    // ack back to sender with new revision
+    socket.emit('operation-ack', { revision: newRevision })
+  })
 
   socket.on('disconnect', () => {
-    console.log('user disconnected:', socket.id);
-  });
-});
+    console.log('user disconnected:', socket.id)
+  })
+  socket.on('content-update', ({ documentId, content }) => {
+    socket.to(documentId).emit('content-update', { content })
+  })
+})
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
