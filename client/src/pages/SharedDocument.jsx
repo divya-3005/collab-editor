@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -18,7 +18,8 @@ export default function SharedDocument() {
   const [error, setError] = useState('')
   const [docId, setDocId] = useState(null)
   const { theme, toggleTheme } = useTheme()
-  const isApplyingRemote = { current: false }
+  const isApplyingRemote = useRef(false)
+  const docIdRef = useRef(null)
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -28,6 +29,15 @@ export default function SharedDocument() {
       attributes: {
         class: 'focus:outline-none',
       }
+    },
+    onUpdate: ({ editor }) => {
+      // Only emit if this user has edit permission and the change came from local typing
+      if (isApplyingRemote.current) return
+      if (!docIdRef.current) return
+      socket.emit('content-update', {
+        documentId: docIdRef.current,
+        content: editor.getHTML()
+      })
     }
   })
 
@@ -38,6 +48,7 @@ export default function SharedDocument() {
         setTitle(res.data.title)
         setPermission(res.data.permission)
         setDocId(res.data.id)
+        docIdRef.current = res.data.id
         if (editor) {
           editor.commands.setContent(res.data.content || '')
           if (res.data.permission === 'edit') {
