@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
 import socket from '../socket/socket.js'
 import toast from 'react-hot-toast'
 import { useTheme } from '../context/ThemeContext'
@@ -56,17 +55,13 @@ export default function Document() {
   const isApplyingRemote = useRef(false)
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({
-        placeholder: 'Start writing…',
-      }),
-    ],
+    extensions: [StarterKit],
     content: '',
     editorProps: {
       attributes: {
         class: 'focus:outline-none',
         'data-gramm': 'false',
+        'data-placeholder': 'Start writing…',
       }
     },
     onUpdate: ({ editor }) => {
