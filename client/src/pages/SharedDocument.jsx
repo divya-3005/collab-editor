@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import socket from '../socket/socket.js'
 import { useTheme } from '../context/ThemeContext'
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Sun, ArrowLeft } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
@@ -18,16 +18,15 @@ export default function SharedDocument() {
   const [error, setError] = useState('')
   const [docId, setDocId] = useState(null)
   const { theme, toggleTheme } = useTheme()
-
   const isApplyingRemote = { current: false }
 
   const editor = useEditor({
     extensions: [StarterKit],
     content: '',
-    editable: false, // start as read-only
+    editable: false,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm sm:prose lg:prose-lg mx-auto focus:outline-none min-h-screen p-8'
+        class: 'focus:outline-none',
       }
     }
   })
@@ -39,10 +38,8 @@ export default function SharedDocument() {
         setTitle(res.data.title)
         setPermission(res.data.permission)
         setDocId(res.data.id)
-
         if (editor) {
           editor.commands.setContent(res.data.content || '')
-          // make editable if permission allows
           if (res.data.permission === 'edit') {
             editor.setEditable(true)
           }
@@ -53,24 +50,19 @@ export default function SharedDocument() {
         setLoading(false)
       }
     }
-
     if (editor) fetchSharedDoc()
   }, [editor, shareToken])
 
-  // join socket room for real-time sync
   useEffect(() => {
     if (!docId) return
-
     socket.connect()
     socket.emit('join-document', docId)
-
     socket.on('content-update', ({ content }) => {
       if (!editor) return
       isApplyingRemote.current = true
       editor.commands.setContent(content, false)
       isApplyingRemote.current = false
     })
-
     return () => {
       socket.off('content-update')
       socket.disconnect()
@@ -78,55 +70,76 @@ export default function SharedDocument() {
   }, [docId, editor])
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-400 text-sm">Loading document...</p>
+    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#111318]">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">Loading document…</p>
+      </div>
     </div>
   )
 
   if (error) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-red-500 text-sm mb-4">{error}</p>
+    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#111318] p-6">
+      <div className="text-center max-w-sm">
+        <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center mx-auto mb-4">
+          <span className="text-2xl">!</span>
+        </div>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Link not found</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{error}</p>
         <button
           onClick={() => navigate('/login')}
-          className="text-blue-600 text-sm hover:underline"
+          className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
         >
-          Go to login
+          Go to sign in →
         </button>
       </div>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
-      <div className="fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between z-10 shadow-sm transition-colors duration-200">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <img src="/logo.svg" alt="Logo" className="h-6 w-auto" />
-            <span className="text-xl font-bold text-blue-600 dark:text-blue-400">CollabDocs</span>
+    <div className="min-h-screen bg-white dark:bg-[#111318] transition-colors duration-200">
+
+      {/* ── Header ── */}
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-[#16181f]/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
+        <div className="h-[52px] px-4 flex items-center justify-between">
+          {/* Left */}
+          <div className="flex items-center gap-3 min-w-0">
+            <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+              <img src="/logo.svg" alt="CollabDocs" className="h-6 w-auto" />
+            </Link>
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{title}</p>
           </div>
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700"></div>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={toggleTheme} className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          
-          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700"></div>
 
-          <span className={`text-xs px-2.5 py-1.5 rounded-md font-bold uppercase tracking-wider ${
-            permission === 'edit'
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-          }`}>
-            {permission === 'edit' ? 'Can edit' : 'View only'}
-          </span>
-        </div>
-      </div>
+          {/* Right */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Permission badge */}
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
+              permission === 'edit'
+                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+            }`}>
+              {permission === 'edit' ? 'Can edit' : 'View only'}
+            </span>
 
-      <div className="pt-16 max-w-4xl mx-auto">
-        <EditorContent editor={editor} />
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            >
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Editor ── */}
+      <div className="pt-[52px] pb-32">
+        <div className="max-w-[760px] mx-auto px-6 sm:px-8">
+          <h1 className="doc-title-input mt-10 mb-6">{title || 'Untitled Document'}</h1>
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   )
