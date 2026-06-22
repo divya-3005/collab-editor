@@ -98,7 +98,10 @@ export default function SharedDocument() {
     <div className="min-h-screen bg-white">
       <div className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-10">
         <div className="flex items-center gap-4">
-          <span className="text-xl font-semibold text-blue-600">CollabDocs</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Logo" className="h-6 w-auto" />
+            <span className="text-xl font-semibold text-blue-600">CollabDocs</span>
+          </div>
           <span className="text-sm text-gray-600">{title}</span>
         </div>
         <div className="flex items-center gap-3">

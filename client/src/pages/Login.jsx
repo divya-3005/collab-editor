@@ -44,10 +44,13 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full max-w-md">
-        <h1 className="text-2xl font-semibold text-gray-800 mb-1">
+        <div className="flex justify-center mb-6">
+          <img src="/logo.png" alt="CollabDocs Logo" className="h-12 w-auto" />
+        </div>
+        <h1 className="text-2xl font-semibold text-gray-800 mb-1 text-center">
           {isRegister ? 'Create account' : 'Welcome back'}
         </h1>
-        <p className="text-gray-500 text-sm mb-6">
+        <p className="text-gray-500 text-sm mb-6 text-center">
           {isRegister ? 'Start collaborating today' : 'Sign in to your documents'}
         </p>
 
