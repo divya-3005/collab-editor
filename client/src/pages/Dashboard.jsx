@@ -2,10 +2,24 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Users } from 'lucide-react'
+import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+
+// Highlight matching search text in document titles
+function highlightMatch(text, query) {
+  if (!query) return text
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return text
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  )
+}
 
 function UserAvatar({ name }) {
   const initials = (name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -37,6 +51,7 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const menuRef = useRef(null)
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -181,7 +196,7 @@ export default function Dashboard() {
       <main className="max-w-5xl mx-auto px-6 pt-24 pb-16">
 
         {/* Page header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Documents</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
@@ -197,6 +212,28 @@ export default function Dashboard() {
             {creating ? 'Creating…' : 'New document'}
           </button>
         </div>
+
+        {/* Search bar */}
+        {!loading && documents.length > 0 && (
+          <div className="relative mb-5">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search documents…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 text-sm bg-white dark:bg-[#1a1f2e] border border-gray-200 dark:border-gray-700 rounded-xl text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Document list */}
         {loading ? (
@@ -225,43 +262,63 @@ export default function Dashboard() {
           </div>
         ) : (
           /* ── Document list ── */
-          <div className="bg-white dark:bg-[#16181f] rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => navigate(`/document/${doc.id}`)}
-                className="group flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-              >
-                {/* Doc icon */}
-                <div className="w-9 h-9 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center flex-shrink-0 text-gray-400 dark:text-gray-500 group-hover:border-indigo-200 dark:group-hover:border-indigo-900 group-hover:text-indigo-500 transition-all">
-                  <FileText size={17} />
-                </div>
-
-                {/* Title + meta */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    {doc.title || 'Untitled Document'}
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                    Edited {formatRelativeDate(doc.updatedAt)}
-                  </p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={(e) => handleDeleteDoc(doc.id, e)}
-                    disabled={deletingId === doc.id}
-                    className="p-1.5 text-gray-300 dark:text-gray-700 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                    title="Delete document"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                  <ChevronRight size={16} className="text-gray-300 dark:text-gray-700 group-hover:text-indigo-400 transition-colors" />
-                </div>
+          (() => {
+            const filtered = documents.filter(doc =>
+              (doc.title || 'Untitled Document').toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            return filtered.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No documents matching <span className="font-semibold text-gray-700 dark:text-gray-300">"{searchQuery}"</span>
+                </p>
+                <button onClick={() => setSearchQuery('')} className="text-xs text-indigo-500 hover:underline mt-2">
+                  Clear search
+                </button>
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="bg-white dark:bg-[#16181f] rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
+                {filtered.map((doc) => (
+                  <div
+                    key={doc.id}
+                    onClick={() => navigate(`/document/${doc.id}`)}
+                    className="group flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  >
+                    {/* Doc icon */}
+                    <div className="w-9 h-9 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center flex-shrink-0 text-gray-400 dark:text-gray-500 group-hover:border-indigo-200 dark:group-hover:border-indigo-900 group-hover:text-indigo-500 transition-all">
+                      <FileText size={17} />
+                    </div>
+
+                    {/* Title + meta */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        {searchQuery ? (
+                          highlightMatch(doc.title || 'Untitled Document', searchQuery)
+                        ) : (
+                          doc.title || 'Untitled Document'
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                        Edited {formatRelativeDate(doc.updatedAt)}
+                      </p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={(e) => handleDeleteDoc(doc.id, e)}
+                        disabled={deletingId === doc.id}
+                        className="p-1.5 text-gray-300 dark:text-gray-700 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete document"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      <ChevronRight size={16} className="text-gray-300 dark:text-gray-700 group-hover:text-indigo-400 transition-colors" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()
         )}
       </main>
     </div>

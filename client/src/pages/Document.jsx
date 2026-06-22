@@ -168,26 +168,20 @@ export default function Document() {
       {/* ── Top header ── */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-[#16181f]/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 transition-colors duration-200">
         <div className="h-[52px] px-4 flex items-center gap-3 justify-between">
-          {/* Left: back + title */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Left: back + logo */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             <Link
               to="/dashboard"
-              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex-shrink-0"
+              className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
               title="Back to dashboard"
             >
               <ArrowLeft size={18} />
             </Link>
-
-            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
-
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onBlur={saveDocument}
-              className="flex-1 min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-100 bg-transparent border-none outline-none focus:ring-0 truncate placeholder-gray-400 dark:placeholder-gray-600"
-              placeholder="Untitled Document"
-            />
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+            <Link to="/dashboard" className="flex items-center gap-2">
+              <img src="/logo.svg" alt="CollabDocs" className="h-5 w-auto" />
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 hidden sm:block">CollabDocs</span>
+            </Link>
           </div>
 
           {/* Right: status + actions */}
