@@ -5,6 +5,19 @@ import Dashboard from './pages/Dashboard'
 import Document from './pages/Document'
 import AuthCallback from './pages/AuthCallback'
 import SharedDocument from './pages/SharedDocument'
+import { ThemeProvider, useTheme } from './context/ThemeContext'
+
+const ThemedToaster = () => {
+  const { theme } = useTheme()
+  return (
+    <Toaster 
+      position="top-right"
+      toastOptions={{
+        className: theme === 'dark' ? '!bg-gray-800 !text-white !border !border-gray-700' : '',
+      }}
+    />
+  )
+}
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -13,9 +26,10 @@ function PrivateRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" />
-      <Routes>
+    <ThemeProvider>
+      <BrowserRouter>
+        <ThemedToaster />
+        <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={
           <PrivateRoute>
@@ -31,6 +45,7 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/share/:shareToken" element={<SharedDocument />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }

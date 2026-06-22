@@ -4,6 +4,8 @@ import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import socket from '../socket/socket.js'
+import { useTheme } from '../context/ThemeContext'
+import { Moon, Sun } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
@@ -15,6 +17,7 @@ export default function SharedDocument() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [docId, setDocId] = useState(null)
+  const { theme, toggleTheme } = useTheme()
 
   const isApplyingRemote = { current: false }
 
@@ -95,20 +98,27 @@ export default function SharedDocument() {
   )
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-10">
+    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
+      <div className="fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between z-10 shadow-sm transition-colors duration-200">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="Logo" className="h-6 w-auto" />
-            <span className="text-xl font-semibold text-blue-600">CollabDocs</span>
+            <span className="text-xl font-bold text-blue-600 dark:text-blue-400">CollabDocs</span>
           </div>
-          <span className="text-sm text-gray-600">{title}</span>
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700"></div>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+        <div className="flex items-center gap-4">
+          <button onClick={toggleTheme} className="p-1.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          
+          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700"></div>
+
+          <span className={`text-xs px-2.5 py-1.5 rounded-md font-bold uppercase tracking-wider ${
             permission === 'edit'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-500'
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
           }`}>
             {permission === 'edit' ? 'Can edit' : 'View only'}
           </span>

@@ -1,3 +1,50 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply transition-colors duration-200 ease-in-out;
+  }
+}
+
+/* Dark mode overrides for Tiptap editor */
+.dark .prose {
+  color: #e5e7eb;
+}
+.dark .prose h1,
+.dark .prose h2,
+.dark .prose h3,
+.dark .prose h4,
+.dark .prose h5,
+.dark .prose h6 {
+  color: #f3f4f6;
+}
+.dark .prose strong {
+  color: #f3f4f6;
+}
+.dark .prose blockquote {
+  color: #d1d5db;
+  border-left-color: #4b5563;
+}
+.dark .prose a {
+  color: #60a5fa;
+}
+.dark .prose code {
+  color: #f3f4f6;
+  background-color: #374151;
+}
+.dark .prose ul, .dark .prose ol {
+  color: #e5e7eb;
+}
+.dark .prose li::marker {
+  color: #9ca3af;
+}
+/* Ensure the editor itself takes up height properly */
+.ProseMirror {
+  min-height: calc(100vh - 200px);
+  outline: none;
+}
+.dark .ProseMirror p.is-editor-empty:first-child::before {
+  color: #6b7280;
+}

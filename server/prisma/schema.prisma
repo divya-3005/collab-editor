@@ -24,7 +24,7 @@ model Document {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   ownerId    String
-  owner      User      @relation("owner", fields: [ownerId], references: [id])
+  owner      User      @relation("owner", fields: [ownerId], references: [id], onDelete: Cascade)
   operations Operation[]
   shares     DocumentShare[]
 }
@@ -37,7 +37,7 @@ model Operation {
   revision   Int
   createdAt  DateTime @default(now())
   documentId String
-  document   Document @relation(fields: [documentId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
 
 model DocumentShare {
@@ -45,8 +45,8 @@ model DocumentShare {
   permission String   @default("view")
   documentId String
   userId     String
-  document   Document @relation(fields: [documentId], references: [id])
-  user       User     @relation(fields: [userId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, userId])
 }
