@@ -7,9 +7,9 @@ import prisma from '../lib/prisma.js'
 const router = express.Router()
 
 passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL,
+  clientID: (process.env.GOOGLE_CLIENT_ID || '').trim(),
+  clientSecret: (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
+  callbackURL: (process.env.GOOGLE_CALLBACK_URL || '').trim(),
   proxy: true
 }, async (accessToken, refreshToken, profile, done) => {
   try {
