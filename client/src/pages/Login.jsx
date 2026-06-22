@@ -45,7 +45,7 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors duration-500">
       <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl border border-white/20 dark:border-gray-700/50 w-full max-w-md transition-all">
         <div className="flex justify-center mb-6">
-          <img src="/logo.png" alt="CollabDocs Logo" className="h-12 w-auto" />
+          <img src="/logo.svg" alt="CollabDocs Logo" className="h-12 w-auto" />
         </div>
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1 text-center tracking-tight">
           {isRegister ? 'Create account' : 'Welcome back'}

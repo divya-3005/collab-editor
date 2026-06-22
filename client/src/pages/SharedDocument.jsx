@@ -102,7 +102,7 @@ export default function SharedDocument() {
       <div className="fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between z-10 shadow-sm transition-colors duration-200">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Logo" className="h-6 w-auto" />
+            <img src="/logo.svg" alt="Logo" className="h-6 w-auto" />
             <span className="text-xl font-bold text-blue-600 dark:text-blue-400">CollabDocs</span>
           </div>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700"></div>
