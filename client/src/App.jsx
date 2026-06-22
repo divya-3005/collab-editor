@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Document from './pages/Document'
+import AuthCallback from './pages/AuthCallback'
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -24,6 +25,7 @@ export default function App() {
           </PrivateRoute>
         } />
         <Route path="*" element={<Navigate to="/login" />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
       </Routes>
     </BrowserRouter>
   )

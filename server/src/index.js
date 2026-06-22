@@ -1,12 +1,13 @@
+import './loadEnv.js';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
+import passport from 'passport'
+import googleAuthRoutes from './routes/googleAuth.js'
 
-dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,6 +21,7 @@ const io = new Server(httpServer, {
 
 app.use(cors({ origin: process.env.CLIENT_URL }));
 app.use(express.json());
+app.use(passport.initialize())
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -28,6 +30,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 
 app.use('/api/documents', documentRoutes);
+
+app.use('/api/auth/google', googleAuthRoutes);
 
 import { getDocumentState, transformAgainstHistory, applyOperation } from './ot/server.js'
 
