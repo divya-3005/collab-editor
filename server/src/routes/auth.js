@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
-import authMiddleware from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -75,10 +75,10 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.delete('/me', authMiddleware, async (req, res) => {
+router.delete('/me', authenticate, async (req, res) => {
   try {
     await prisma.user.delete({
-      where: { id: req.user.userId }
+      where: { id: req.userId }
     });
     res.json({ message: 'Account deleted successfully' });
   } catch (err) {
