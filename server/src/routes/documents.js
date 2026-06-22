@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import jwt from 'jsonwebtoken'
 
 const router = express.Router();
 
@@ -112,5 +113,51 @@ router.delete('/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+// generate a share link
+router.post('/:id/share', authenticate, async (req, res) => {
+  try {
+    const { permission } = req.body // 'view' or 'edit'
+
+    const document = await prisma.document.findUnique({
+      where: { id: req.params.id }
+    })
+
+    if (!document) return res.status(404).json({ error: 'Document not found' })
+    if (document.ownerId !== req.userId) return res.status(403).json({ error: 'Access denied' })
+
+    // generate a signed share token
+    const shareToken = jwt.sign(
+      { documentId: req.params.id, permission },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+
+    res.json({
+      shareUrl: `${process.env.CLIENT_URL}/share/${shareToken}`,
+      permission
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// access a shared document via token
+router.get('/shared/:shareToken', async (req, res) => {
+  try {
+    const decoded = jwt.verify(req.params.shareToken, process.env.JWT_SECRET)
+    const { documentId, permission } = decoded
+
+    const document = await prisma.document.findUnique({
+      where: { id: documentId }
+    })
+
+    if (!document) return res.status(404).json({ error: 'Document not found' })
+
+    res.json({ ...document, permission })
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid or expired share link' })
+  }
+})
 
 export default router;

@@ -23,6 +23,21 @@ export default function Document() {
   const pendingOps = useRef([])
   const isApplyingRemote = useRef(false)
 
+  const [shareUrl, setShareUrl] = useState('')
+  const [showShareModal, setShowShareModal] = useState(false)
+
+  const shareDocument = async (permission) => {
+    try {
+      const res = await axios.post(`${API}/documents/${id}/share`,
+        { permission },
+        { headers }
+      )
+      setShareUrl(res.data.shareUrl)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const editor = useEditor({
     extensions: [StarterKit],
     content: '',
@@ -156,7 +171,7 @@ export default function Document() {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-10">
+      <div className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-50">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/dashboard')}
@@ -181,6 +196,13 @@ export default function Document() {
             {saving ? 'Saving...' : lastSaved ? `Saved at ${formatTime(lastSaved)}` : ''}
           </span>
           <button
+            onClick={() => setShowShareModal(true)}
+            className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-gray-50"
+          >
+            Share
+          </button>
+
+          <button
             onClick={saveDocument}
             className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700"
           >
@@ -189,7 +211,7 @@ export default function Document() {
         </div>
       </div>
 
-      <div className="fixed top-12 left-0 right-0 bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-2 z-10">
+      <div className="fixed top-12 left-0 right-0 bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-2 z-50">
         <button
           onClick={() => editor?.chain().focus().toggleBold().run()}
           className={`px-2 py-1 rounded text-sm font-bold ${editor?.isActive('bold') ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
@@ -239,6 +261,52 @@ export default function Document() {
       <div className="pt-24 max-w-4xl mx-auto">
         <EditorContent editor={editor} />
       </div>
+
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100]">
+          <div className="bg-white rounded-xl shadow-lg p-6 w-96">
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Share document</h3>
+
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => shareDocument('view')}
+                className="flex-1 border border-gray-300 text-gray-600 py-2 rounded text-xs hover:bg-gray-50"
+              >
+                View only link
+              </button>
+              <button
+                onClick={() => shareDocument('edit')}
+                className="flex-1 bg-blue-600 text-white py-2 rounded text-xs hover:bg-blue-700"
+              >
+                Edit link
+              </button>
+            </div>
+
+            {shareUrl && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <span className="text-xs text-gray-600 flex-1 truncate">{shareUrl}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(shareUrl)
+                    }}
+                    className="text-blue-600 text-xs font-medium flex-shrink-0"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setShowShareModal(false); setShareUrl('') }}
+              className="mt-4 w-full text-gray-400 text-xs hover:text-gray-600"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Document from './pages/Document'
 import AuthCallback from './pages/AuthCallback'
+import SharedDocument from './pages/SharedDocument'
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -26,6 +27,7 @@ export default function App() {
         } />
         <Route path="*" element={<Navigate to="/login" />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/share/:shareToken" element={<SharedDocument />} />
       </Routes>
     </BrowserRouter>
   )
