@@ -5,8 +5,9 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import socket from '../socket/socket.js'
 import { transform, apply } from '../ot/transform.js'
+import toast from 'react-hot-toast'
 
-const API = 'http://localhost:3001/api'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 export default function Document() {
   const { id } = useParams()
@@ -34,7 +35,7 @@ export default function Document() {
       )
       setShareUrl(res.data.shareUrl)
     } catch (err) {
-      console.error(err)
+      toast.error('Failed to generate share link')
     }
   }
 
@@ -99,7 +100,7 @@ export default function Document() {
           editor.commands.setContent(res.data.content)
         }
       } catch (err) {
-        console.error(err)
+        toast.error('Failed to load document')
         navigate('/dashboard')
       }
     }
@@ -152,7 +153,7 @@ export default function Document() {
       }, { headers })
       setLastSaved(new Date())
     } catch (err) {
-      console.error(err)
+      toast.error('Failed to save document')
     } finally {
       setSaving(false)
     }
@@ -289,6 +290,7 @@ export default function Document() {
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(shareUrl)
+                      toast.success('Link copied to clipboard!')
                     }}
                     className="text-blue-600 text-xs font-medium flex-shrink-0"
                   >

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import toast from 'react-hot-toast'
 
-const API = 'http://localhost:3001/api'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 export default function Dashboard() {
   const [documents, setDocuments] = useState([])
@@ -23,7 +24,7 @@ export default function Dashboard() {
       const res = await axios.get(`${API}/documents`, { headers })
       setDocuments(res.data)
     } catch (err) {
-      console.error(err)
+      toast.error('Failed to load documents')
     } finally {
       setLoading(false)
     }
@@ -35,7 +36,7 @@ export default function Dashboard() {
       const res = await axios.post(`${API}/documents`, { title: 'Untitled Document' }, { headers })
       navigate(`/document/${res.data.id}`)
     } catch (err) {
-      console.error(err)
+      toast.error('Failed to create document')
     } finally {
       setCreating(false)
     }

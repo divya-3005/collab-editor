@@ -47,7 +47,6 @@ io.on('connection', (socket) => {
   })
 
   socket.on('operation', ({ documentId, operation, revision }) => {
-    console.log(`operation received on doc ${documentId} at revision ${revision}`)
 
     // transform against any operations that happened since client's revision
     const transformed = transformAgainstHistory(operation, revision, documentId)

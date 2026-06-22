@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 
-const API = 'http://localhost:3001/api'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 export default function Login() {
   const [isRegister, setIsRegister] = useState(false)
@@ -31,9 +32,10 @@ export default function Login() {
       const res = await axios.post(`${API}${endpoint}`, payload)
       localStorage.setItem('token', res.data.token)
       localStorage.setItem('user', JSON.stringify(res.data.user))
+      toast.success(isRegister ? 'Account created successfully!' : 'Welcome back!')
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong')
+      toast.error(err.response?.data?.error || 'Something went wrong')
     } finally {
       setLoading(false)
     }
@@ -48,12 +50,6 @@ export default function Login() {
         <p className="text-gray-500 text-sm mb-6">
           {isRegister ? 'Start collaborating today' : 'Sign in to your documents'}
         </p>
-
-        {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
@@ -118,7 +114,7 @@ export default function Login() {
           </div>
           
           <a
-            href="http://localhost:3001/api/auth/google"
+            href={`${API}/auth/google`}
             className="mt-3 w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
           >
             <svg width="18" height="18" viewBox="0 0 48 48">
