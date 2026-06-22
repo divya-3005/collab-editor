@@ -190,8 +190,7 @@ collab-editor/
 ## 🚀 Getting Started (Local Development)
 
 ### Prerequisites
-- **Node.js** v18+
-- **Docker** (for local PostgreSQL) — or a PostgreSQL instance
+- **Docker Desktop** (or Docker engine + Docker Compose v2)
 
 ### 1. Clone the repo
 
@@ -200,54 +199,39 @@ git clone https://github.com/divya-3005/collab-editor.git
 cd collab-editor
 ```
 
-### 2. Start the database
+### 2. Set up environment variables
+
+Copy the example env files to set up your local environment:
 
 ```bash
-docker compose up -d
+cp server/.env.example server/.env
+cp client/.env.example client/.env
 ```
 
-### 3. Set up the backend
-
-```bash
-cd server
-npm install
-
-# Copy env and fill in your values
-cp .env.example .env
-
-# Push the Prisma schema to the DB
-npx prisma db push
-
-# Start the dev server
-npm run dev
-```
-
-**Required server env vars (`server/.env`):**
-
+Ensure `server/.env` has the correct `DATABASE_URL` pointing to the `postgres` container:
 ```env
-PORT=3001
-DATABASE_URL=postgresql://user:password@localhost:5432/collabdocs
-JWT_SECRET=your_jwt_secret_here
-CLIENT_URL=http://localhost:5173
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
+DATABASE_URL=postgresql://collab:collab123@postgres:5432/collabeditor?schema=public
 ```
 
-### 4. Set up the frontend
+### 3. Start the entire stack
+
+Run this command from the root directory:
 
 ```bash
-cd ../client
-npm install
-
-# Create env file
-echo "VITE_API_URL=http://localhost:3001/api" > .env
-
-# Start the dev server
-npm run dev
+docker compose up --build
 ```
 
-Open **http://localhost:5173** — you're live.
+Docker will build and start three containers:
+- `postgres`: The database running on port 5432
+- `server`: The Node.js API + Socket.io server running on port 3001
+- `client`: The Vite React frontend running on port 5173
+
+**Note on first run:** The `server` container will automatically run `npx prisma generate` during the build process. To push the schema to the database for the first time, run this in a separate terminal:
+```bash
+docker compose exec server npx prisma db push
+```
+
+Open **http://localhost:5173** — you're live. Live reloading is fully supported; any code changes you make in your IDE will instantly reflect in the browser.
 
 <br />
 

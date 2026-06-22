@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   postgres:
     image: postgres:15
@@ -10,5 +11,42 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build: ./server
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://collab:collab123@postgres:5432/collabeditor?schema=public
+      - JWT_SECRET=local_dev_secret_key_123
+      - CLIENT_URL=http://localhost:5173
+      - GOOGLE_CLIENT_ID=provide_in_env_file
+      - GOOGLE_CLIENT_SECRET=provide_in_env_file
+      - GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
+    env_file:
+      - ./server/.env
+    depends_on:
+      - postgres
+    volumes:
+      # Mount source code for live-reloading (excluding node_modules)
+      - ./server/src:/app/src
+      - ./server/prisma:/app/prisma
+
+  client:
+    build: ./client
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3001/api
+    env_file:
+      - ./client/.env
+    depends_on:
+      - server
+    volumes:
+      # Mount source code for live-reloading (excluding node_modules)
+      - ./client/src:/app/src
+      - ./client/public:/app/public
+
 volumes:
   postgres_data:
