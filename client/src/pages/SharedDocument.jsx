@@ -17,6 +17,7 @@ export default function SharedDocument() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [docId, setDocId] = useState(null)
+  const [connectedUsers, setConnectedUsers] = useState(1)
   const { theme, toggleTheme } = useTheme()
   const isApplyingRemote = useRef(false)
   const docIdRef = useRef(null)
@@ -74,8 +75,12 @@ export default function SharedDocument() {
       editor.commands.setContent(content, false)
       isApplyingRemote.current = false
     })
+    socket.on('user-count', (count) => {
+      setConnectedUsers(count)
+    })
     return () => {
       socket.off('content-update')
+      socket.off('user-count')
       socket.disconnect()
     }
   }, [docId, editor])
@@ -124,6 +129,18 @@ export default function SharedDocument() {
 
           {/* Right */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Collaborators */}
+            {connectedUsers > 0 && (
+              <div className="hidden sm:flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-full border border-gray-100 dark:border-gray-700">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 presence-dot flex-shrink-0" />
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  {connectedUsers} {connectedUsers === 1 ? 'editor' : 'editing'}
+                </span>
+              </div>
+            )}
+
+            <div className="hidden sm:block w-px h-5 bg-gray-200 dark:bg-gray-700" />
+
             {/* Permission badge */}
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
               permission === 'edit'

@@ -43,6 +43,11 @@ io.on('connection', (socket) => {
     const state = getDocumentState(documentId)
     // send current revision to client so it knows where it stands
     socket.emit('document-revision', { revision: state.revision })
+    
+    // Broadcast user count to everyone in the room (including sender)
+    const count = io.sockets.adapter.rooms.get(documentId)?.size || 0
+    io.to(documentId).emit('user-count', count)
+    
     console.log(`socket ${socket.id} joined document ${documentId}`)
   })
 
@@ -67,6 +72,19 @@ io.on('connection', (socket) => {
 
     // ack back to sender with new revision
     socket.emit('operation-ack', { revision: newRevision })
+  })
+
+  socket.on('disconnecting', () => {
+    // When a socket disconnects, it leaves all its rooms.
+    // 'disconnecting' fires before it actually leaves, so we can see which rooms it was in.
+    for (const room of socket.rooms) {
+      if (room !== socket.id) {
+        // The socket is about to leave, so the new size will be current size - 1
+        const currentSize = io.sockets.adapter.rooms.get(room)?.size || 0
+        const newCount = Math.max(0, currentSize - 1)
+        io.to(room).emit('user-count', newCount)
+      }
+    }
   })
 
   socket.on('disconnect', () => {
