@@ -4,8 +4,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/index.js",
-    "start": "node src/index.js",
+    "dev": "npx prisma generate && npx prisma db push --accept-data-loss && nodemon src/index.js",
+    "start": "npx prisma generate && npx prisma db push --accept-data-loss && node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -24,7 +24,8 @@
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.21.0",
     "prisma": "^7.8.0",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "sqlite3": "^6.0.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
