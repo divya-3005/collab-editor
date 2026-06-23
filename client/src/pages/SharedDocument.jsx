@@ -22,6 +22,14 @@ export default function SharedDocument() {
   const isApplyingRemote = useRef(false)
   const docIdRef = useRef(null)
 
+  // Local user for presence
+  const [localUser, setLocalUser] = useState(null)
+  useEffect(() => {
+    const colors = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#60A5FA', '#A78BFA', '#F472B6']
+    const color = colors[Math.floor(Math.random() * colors.length)]
+    setLocalUser({ name: 'Guest', color })
+  }, [])
+
   const editor = useEditor({
     extensions: [StarterKit],
     content: '',
@@ -66,9 +74,9 @@ export default function SharedDocument() {
   }, [editor, shareToken])
 
   useEffect(() => {
-    if (!docId) return
+    if (!docId || !localUser) return
     socket.connect()
-    socket.emit('join-document', docId)
+    socket.emit('join-document', { documentId: docId, user: localUser })
     socket.on('content-update', ({ content }) => {
       if (!editor) return
       isApplyingRemote.current = true

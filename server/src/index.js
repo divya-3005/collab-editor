@@ -38,8 +38,23 @@ import { getDocumentState, transformAgainstHistory, applyOperation } from './ot/
 io.on('connection', (socket) => {
   console.log('user connected:', socket.id)
 
-  socket.on('join-document', (documentId) => {
+  socket.on('join-document', (payload) => {
+    let documentId, user
+    if (typeof payload === 'string') {
+      documentId = payload
+    } else {
+      documentId = payload.documentId
+      user = payload.user
+    }
+
     socket.join(documentId)
+    socket.data.currentDocumentId = documentId
+    
+    if (user) {
+      socket.data.user = user
+      socket.to(documentId).emit('user-joined', { socketId: socket.id, ...user })
+    }
+
     const state = getDocumentState(documentId)
     // send current revision to client so it knows where it stands
     socket.emit('document-revision', { revision: state.revision })
@@ -49,6 +64,22 @@ io.on('connection', (socket) => {
     io.to(documentId).emit('user-count', count)
     
     console.log(`socket ${socket.id} joined document ${documentId}`)
+  })
+
+  // When a client explicitly requests the list of connected users
+  socket.on('get-presence', (documentId) => {
+    const room = io.sockets.adapter.rooms.get(documentId)
+    if (!room) return
+    
+    const presence = []
+    for (const sid of room) {
+      if (sid === socket.id) continue // Don't send the user their own presence
+      const clientSocket = io.sockets.sockets.get(sid)
+      if (clientSocket && clientSocket.data.user) {
+        presence.push({ socketId: sid, ...clientSocket.data.user })
+      }
+    }
+    socket.emit('presence-list', presence)
   })
 
   socket.on('operation', ({ documentId, operation, revision }) => {
@@ -76,13 +107,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnecting', () => {
     // When a socket disconnects, it leaves all its rooms.
-    // 'disconnecting' fires before it actually leaves, so we can see which rooms it was in.
     for (const room of socket.rooms) {
       if (room !== socket.id) {
-        // The socket is about to leave, so the new size will be current size - 1
         const currentSize = io.sockets.adapter.rooms.get(room)?.size || 0
         const newCount = Math.max(0, currentSize - 1)
         io.to(room).emit('user-count', newCount)
+        
+        // Broadcast user-left so clients can remove their cursor
+        socket.to(room).emit('user-left', socket.id)
       }
     }
   })
@@ -90,8 +122,18 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('user disconnected:', socket.id)
   })
+
   socket.on('content-update', ({ documentId, content }) => {
     socket.to(documentId).emit('content-update', { content })
+  })
+
+  socket.on('cursor-move', ({ documentId, position, name, color }) => {
+    socket.to(documentId).emit('cursor-move', { 
+      socketId: socket.id, 
+      position, 
+      name, 
+      color 
+    })
   })
 })
 

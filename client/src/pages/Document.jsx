@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { LiveCursors, cursorPluginKey } from '../extensions/LiveCursors.js'
 import socket from '../socket/socket.js'
 import toast from 'react-hot-toast'
 import { useTheme } from '../context/ThemeContext'
@@ -59,9 +60,24 @@ export default function Document() {
   const [loadingVersions, setLoadingVersions] = useState(false)
 
   const isApplyingRemote = useRef(false)
+  const cursorThrottleRef = useRef(null)
+  
+  // Presence State
+  const [localUser, setLocalUser] = useState(null)
+  const [remoteUsers, setRemoteUsers] = useState(new Map())
+  const labelTimeoutRefs = useRef(new Map())
+
+  // Initialize local user with a random color
+  useEffect(() => {
+    const userJson = localStorage.getItem('user')
+    const user = userJson ? JSON.parse(userJson) : { name: 'Guest' }
+    const colors = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#60A5FA', '#A78BFA', '#F472B6']
+    const color = colors[Math.floor(Math.random() * colors.length)]
+    setLocalUser({ name: user.name, color })
+  }, [])
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, LiveCursors],
     content: '',
     editorProps: {
       attributes: {
@@ -76,8 +92,31 @@ export default function Document() {
         documentId: id,
         content: editor.getHTML()
       })
+    },
+    onSelectionUpdate: ({ editor }) => {
+      if (!localUser) return
+      
+      // Throttle cursor movement emission to 50ms
+      if (cursorThrottleRef.current) return
+      cursorThrottleRef.current = setTimeout(() => {
+        cursorThrottleRef.current = null
+      }, 50)
+
+      socket.emit('cursor-move', {
+        documentId: id,
+        position: editor.state.selection.anchor,
+        name: localUser.name,
+        color: localUser.color
+      })
     }
   })
+
+  // Sync remoteUsers to Tiptap extension
+  useEffect(() => {
+    if (!editor) return
+    editor.storage.liveCursors.cursors = remoteUsers
+    editor.view.dispatch(editor.state.tr.setMeta(cursorPluginKey, { cursors: remoteUsers }))
+  }, [editor, remoteUsers])
 
   // Load document
   useEffect(() => {
@@ -98,8 +137,12 @@ export default function Document() {
 
   // Socket
   useEffect(() => {
+    if (!localUser) return
+    
     socket.connect()
-    socket.emit('join-document', id)
+    // Send user payload for presence
+    socket.emit('join-document', { documentId: id, user: localUser })
+    socket.emit('get-presence', id)
 
     socket.on('content-update', ({ content }) => {
       if (!editor) return
@@ -108,18 +151,68 @@ export default function Document() {
       isApplyingRemote.current = false
     })
 
-    socket.on('user-count', (count) => {
-      setConnectedUsers(count)
+    socket.on('presence-list', (users) => {
+      setRemoteUsers(prev => {
+        const next = new Map(prev)
+        users.forEach(u => next.set(u.socketId, { ...u, showLabel: true }))
+        return next
+      })
+    })
+
+    socket.on('user-joined', (user) => {
+      setRemoteUsers(prev => {
+        const next = new Map(prev)
+        next.set(user.socketId, { ...user, showLabel: true })
+        return next
+      })
+    })
+
+    socket.on('user-left', (socketId) => {
+      setRemoteUsers(prev => {
+        const next = new Map(prev)
+        next.delete(socketId)
+        return next
+      })
+    })
+
+    socket.on('cursor-move', (data) => {
+      setRemoteUsers(prev => {
+        const next = new Map(prev)
+        const existing = next.get(data.socketId) || {}
+        next.set(data.socketId, { ...existing, ...data, showLabel: true })
+        return next
+      })
+
+      // Hide label after 3 seconds of inactivity
+      if (labelTimeoutRefs.current.has(data.socketId)) {
+        clearTimeout(labelTimeoutRefs.current.get(data.socketId))
+      }
+      
+      const timeout = setTimeout(() => {
+        setRemoteUsers(prev => {
+          if (!prev.has(data.socketId)) return prev
+          const next = new Map(prev)
+          const user = next.get(data.socketId)
+          next.set(data.socketId, { ...user, showLabel: false })
+          return next
+        })
+      }, 3000)
+      
+      labelTimeoutRefs.current.set(data.socketId, timeout)
     })
 
     return () => {
       socket.off('content-update')
-      socket.off('document-revision')
-      socket.off('operation-ack')
-      socket.off('user-count')
+      socket.off('presence-list')
+      socket.off('user-joined')
+      socket.off('user-left')
+      socket.off('cursor-move')
       socket.disconnect()
+      
+      // Cleanup timeouts
+      labelTimeoutRefs.current.forEach(clearTimeout)
     }
-  }, [editor, id])
+  }, [editor, id, localUser])
 
   // Auto-save every 3 seconds
   const saveDocument = useCallback(async () => {
@@ -278,12 +371,21 @@ export default function Document() {
             </span>
 
             {/* Collaborators */}
-            {connectedUsers > 0 && (
-              <div className="hidden sm:flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-full border border-gray-100 dark:border-gray-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 presence-dot flex-shrink-0" />
-                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                  {connectedUsers} {connectedUsers === 1 ? 'editor' : 'editing'}
-                </span>
+            {remoteUsers.size > 0 && (
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1">
+                {Array.from(remoteUsers.values()).map(user => (
+                  <div 
+                    key={user.socketId}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white dark:border-[#16181f] shadow-sm -ml-2 first:ml-0 relative group"
+                    style={{ backgroundColor: user.color }}
+                  >
+                    {user.name.charAt(0).toUpperCase()}
+                    {/* Tooltip */}
+                    <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                      {user.name}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
