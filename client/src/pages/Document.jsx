@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -40,7 +40,7 @@ export default function Document() {
   const { id } = useParams()
   const navigate = useNavigate()
   const token = localStorage.getItem('token')
-  const headers = { Authorization: `Bearer ${token}` }
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
   const { theme, toggleTheme } = useTheme()
 
   const [title, setTitle] = useState('')
