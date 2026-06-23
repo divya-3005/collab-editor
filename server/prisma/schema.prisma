@@ -27,6 +27,20 @@ model Document {
   owner      User      @relation("owner", fields: [ownerId], references: [id], onDelete: Cascade)
   operations Operation[]
   shares     DocumentShare[]
+  versions   DocumentVersion[]
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  versionNumber Int
+  name          String?  // Optional custom name, e.g. "Restored from Version 3"
+  title         String
+  content       String
+  createdAt     DateTime @default(now())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber])
 }
 
 model Operation {

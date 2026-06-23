@@ -9,7 +9,7 @@ import { useTheme } from '../context/ThemeContext'
 import {
   Moon, Sun, Share2, Save, ArrowLeft, Bold, Italic,
   Strikethrough, Heading1, Heading2, List, ListOrdered,
-  Copy, Check, X, Users
+  Copy, Check, X, Users, History, Clock, RotateCcw
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
@@ -51,6 +51,12 @@ export default function Document() {
   const [sharePermission, setSharePermission] = useState('view')
   const [copied, setCopied] = useState(false)
   const [generatingLink, setGeneratingLink] = useState(false)
+
+  // History State
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+  const [versions, setVersions] = useState([])
+  const [previewingVersion, setPreviewingVersion] = useState(null)
+  const [loadingVersions, setLoadingVersions] = useState(false)
 
   const isApplyingRemote = useRef(false)
 
@@ -161,6 +167,86 @@ export default function Document() {
     if (!date) return ''
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   }
+  
+  const formatDateFull = (dateStr) => {
+    return new Date(dateStr).toLocaleString('en-US', { 
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+    })
+  }
+
+  // Version History Functions
+  const fetchVersions = useCallback(async () => {
+    setLoadingVersions(true)
+    try {
+      const res = await axios.get(`${API}/documents/${id}/versions`, { headers })
+      setVersions(res.data)
+    } catch (err) {
+      toast.error('Failed to load history')
+    } finally {
+      setLoadingVersions(false)
+    }
+  }, [id, headers])
+
+  useEffect(() => {
+    if (showHistoryPanel) fetchVersions()
+  }, [showHistoryPanel, fetchVersions])
+
+  const saveSnapshot = async () => {
+    try {
+      await saveDocument() // ensure latest changes are saved first
+      await axios.post(`${API}/documents/${id}/snapshot`, {}, { headers })
+      toast.success('Version saved!')
+      fetchVersions()
+    } catch (err) {
+      toast.error('Failed to save version')
+    }
+  }
+
+  const previewVersion = async (version) => {
+    try {
+      const res = await axios.get(`${API}/documents/${id}/versions/${version.id}`, { headers })
+      editor.commands.setContent(res.data.content, false)
+      setTitle(res.data.title)
+      editor.setEditable(false)
+      setPreviewingVersion(res.data)
+    } catch (err) {
+      toast.error('Failed to load version preview')
+    }
+  }
+
+  const exitPreview = async () => {
+    try {
+      const res = await axios.get(`${API}/documents/${id}`, { headers })
+      editor.commands.setContent(res.data.content, false)
+      setTitle(res.data.title)
+      editor.setEditable(true)
+      setPreviewingVersion(null)
+    } catch (err) {
+      toast.error('Failed to exit preview')
+    }
+  }
+
+  const restoreVersion = async () => {
+    if (!previewingVersion) return
+    try {
+      const res = await axios.post(`${API}/documents/${id}/versions/${previewingVersion.id}/restore`, {}, { headers })
+      
+      editor.commands.setContent(res.data.content, false)
+      setTitle(res.data.title)
+      editor.setEditable(true)
+      setPreviewingVersion(null)
+      
+      socket.emit('content-update', {
+        documentId: id,
+        content: res.data.content
+      })
+      
+      toast.success('Version restored!')
+      fetchVersions()
+    } catch (err) {
+      toast.error('Failed to restore version')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#111318] transition-colors duration-200">
@@ -212,13 +298,26 @@ export default function Document() {
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
 
+            {/* History button */}
+            <button
+              onClick={() => setShowHistoryPanel(!showHistoryPanel)}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg transition-all ${
+                showHistoryPanel 
+                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' 
+                  : 'text-gray-700 dark:text-gray-300 border border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+            >
+              <History size={14} />
+              <span className="hidden sm:block">History</span>
+            </button>
+
             {/* Share button */}
             <button
               onClick={() => setShowShareModal(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
             >
               <Share2 size={14} />
-              Share
+              <span className="hidden sm:block">Share</span>
             </button>
 
             {/* Save button */}
@@ -234,52 +333,159 @@ export default function Document() {
       </header>
 
       {/* ── Toolbar ── */}
-      <div className="fixed top-[52px] left-0 right-0 z-40 bg-white/95 dark:bg-[#16181f]/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 px-4 transition-colors duration-200">
+      <div className={`fixed top-[52px] left-0 z-40 bg-white/95 dark:bg-[#16181f]/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 px-4 transition-all duration-200 ${showHistoryPanel ? 'right-80' : 'right-0'}`}>
         <div className="max-w-[760px] mx-auto h-10 flex items-center gap-0.5">
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive('bold')} title="Bold">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive('bold')} title="Bold" disabled={!!previewingVersion}>
             <Bold size={15} />
           </ToolbarBtn>
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive('italic')} title="Italic">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive('italic')} title="Italic" disabled={!!previewingVersion}>
             <Italic size={15} />
           </ToolbarBtn>
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleStrike().run()} active={editor?.isActive('strike')} title="Strikethrough">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleStrike().run()} active={editor?.isActive('strike')} title="Strikethrough" disabled={!!previewingVersion}>
             <Strikethrough size={15} />
           </ToolbarBtn>
 
           <ToolbarDivider />
 
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} active={editor?.isActive('heading', { level: 1 })} title="Heading 1">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} active={editor?.isActive('heading', { level: 1 })} title="Heading 1" disabled={!!previewingVersion}>
             <Heading1 size={15} />
           </ToolbarBtn>
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive('heading', { level: 2 })} title="Heading 2">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive('heading', { level: 2 })} title="Heading 2" disabled={!!previewingVersion}>
             <Heading2 size={15} />
           </ToolbarBtn>
 
           <ToolbarDivider />
 
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive('bulletList')} title="Bullet list">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive('bulletList')} title="Bullet list" disabled={!!previewingVersion}>
             <List size={15} />
           </ToolbarBtn>
-          <ToolbarBtn onClick={() => editor?.chain().focus().toggleOrderedList().run()} active={editor?.isActive('orderedList')} title="Ordered list">
+          <ToolbarBtn onClick={() => editor?.chain().focus().toggleOrderedList().run()} active={editor?.isActive('orderedList')} title="Ordered list" disabled={!!previewingVersion}>
             <ListOrdered size={15} />
           </ToolbarBtn>
         </div>
       </div>
 
-      {/* ── Editor ── */}
-      <div className="pt-[92px] pb-32">
-        <div className="max-w-[760px] mx-auto px-6 sm:px-8">
-          {/* Large document title */}
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onBlur={saveDocument}
-            className="doc-title-input mt-10 mb-6 w-full"
-            placeholder="Untitled Document"
-          />
-          {/* Body editor */}
-          <EditorContent editor={editor} />
+      {/* ── Preview Banner ── */}
+      {previewingVersion && (
+        <div className={`fixed top-[92px] left-0 z-30 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2.5 transition-all duration-200 ${showHistoryPanel ? 'right-80' : 'right-0'}`}>
+          <div className="max-w-[760px] mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400">
+              <Clock size={16} />
+              <span className="text-sm font-medium">
+                Previewing version from {formatDateFull(previewingVersion.createdAt)}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={exitPreview}
+                className="px-3 py-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={restoreVersion}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-sm"
+              >
+                <RotateCcw size={14} />
+                Restore this version
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Layout (Editor + Sidebar) ── */}
+      <div className="flex pt-[92px] min-h-screen">
+        
+        {/* Editor Area */}
+        <div className={`flex-1 transition-all duration-300 ${showHistoryPanel ? 'mr-80' : ''}`}>
+          <div className={`max-w-[760px] mx-auto px-6 sm:px-8 pb-32 ${previewingVersion ? 'mt-14' : ''}`}>
+            {/* Large document title */}
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onBlur={saveDocument}
+              disabled={!!previewingVersion}
+              className="doc-title-input mt-10 mb-6 w-full disabled:opacity-80"
+              placeholder="Untitled Document"
+            />
+            {/* Body editor */}
+            <div className={previewingVersion ? 'opacity-80 pointer-events-none grayscale-[20%]' : ''}>
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── History Panel Sidebar ── */}
+        <div 
+          className={`fixed top-[52px] right-0 bottom-0 w-80 bg-gray-50 dark:bg-[#1a1f2e] border-l border-gray-200 dark:border-gray-800 shadow-xl transition-transform duration-300 z-40 flex flex-col ${
+            showHistoryPanel ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-[#16181f]">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <History size={16} className="text-indigo-500" />
+              Version History
+            </h2>
+            <button 
+              onClick={() => setShowHistoryPanel(false)}
+              className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          
+          <div className="p-4 bg-white dark:bg-[#16181f] border-b border-gray-100 dark:border-gray-800">
+            <button
+              onClick={saveSnapshot}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-400 font-semibold py-2 rounded-lg text-sm transition-colors border border-indigo-100 dark:border-indigo-800/30"
+            >
+              <Save size={14} />
+              Save current version
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {loadingVersions ? (
+              <p className="text-xs text-center text-gray-500 dark:text-gray-400 py-4">Loading history…</p>
+            ) : versions.length === 0 ? (
+              <div className="text-center py-8 px-4">
+                <Clock size={24} className="mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                <p className="text-xs text-gray-500 dark:text-gray-400">No versions saved yet. Click the button above to create a snapshot of your document.</p>
+              </div>
+            ) : (
+              versions.map((v) => {
+                const isPreviewing = previewingVersion?.id === v.id;
+                return (
+                  <div 
+                    key={v.id}
+                    onClick={() => previewVersion(v)}
+                    className={`p-3 rounded-xl cursor-pointer border transition-all ${
+                      isPreviewing 
+                        ? 'bg-white dark:bg-[#23293b] border-indigo-300 dark:border-indigo-600 shadow-sm' 
+                        : 'bg-white dark:bg-[#16181f] border-transparent hover:border-gray-200 dark:hover:border-gray-700 shadow-sm'
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-0.5 flex items-center justify-between">
+                      {formatDateFull(v.createdAt)}
+                      {isPreviewing && <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">Previewing</span>}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                        v{v.versionNumber}
+                      </span>
+                      {v.name && (
+                        <span className="text-xs text-indigo-600 dark:text-indigo-400 truncate font-medium">
+                          {v.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
 
