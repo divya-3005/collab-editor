@@ -1,72 +1,133 @@
-// Server-side OT state per document
-// Keeps operation history to transform late-arriving operations
+/**
+ * Operational Transformation (OT) — server-side state manager.
+ *
+ * What is OT?
+ *   When two users edit a document simultaneously, their changes can conflict.
+ *   OT resolves conflicts by mathematically adjusting each operation's position
+ *   so that all clients converge to the same final document, regardless of the
+ *   order in which operations arrive.
+ *
+ *   This is the same technique used by Google Docs, Etherpad, and others.
+ *
+ * How this module works:
+ *   1. Every document has an in-memory "state" tracking its current revision
+ *      number and a full history of applied operations.
+ *   2. When an operation arrives from a client it includes the `revision` the
+ *      client was on when it made the edit.
+ *   3. We slice the history to get every op that was applied *after* that
+ *      revision, then transform our incoming op against each one in turn.
+ *   4. The transformed op is applied to the server state and broadcast to peers.
+ *
+ * Supported operation types: "insert" | "delete"
+ * Each operation: { type, position, char? }
+ */
 
-const documentStates = new Map()
+// ── In-memory store ───────────────────────────────────────────────────────────
+// A Map from documentId → { revision: number, operations: Op[] }
+// This is intentionally in-memory: documents are also persisted to Postgres via
+// the REST API (auto-save every 3 seconds on the client side).
+const documentStates = new Map();
 
+/**
+ * Returns (or lazily creates) the OT state for a given document.
+ * @param {string} documentId
+ * @returns {{ revision: number, operations: object[] }}
+ */
 export function getDocumentState(documentId) {
   if (!documentStates.has(documentId)) {
     documentStates.set(documentId, {
       revision: 0,
-      operations: [] // full history
-    })
+      operations: [] // full history — needed to transform late-arriving ops
+    });
   }
-  return documentStates.get(documentId)
+  return documentStates.get(documentId);
 }
 
+/**
+ * Transforms `op` against all operations that were applied to the document
+ * after the client's `fromRevision`. Returns the adjusted operation, or null
+ * if it became a no-op (e.g. the character was already deleted by a peer).
+ *
+ * @param {object} op           - The incoming operation from the client
+ * @param {number} fromRevision - The revision the client was on when it sent `op`
+ * @param {string} documentId
+ * @returns {object|null}
+ */
 export function transformAgainstHistory(op, fromRevision, documentId) {
-  const state = getDocumentState(documentId)
-  
-  // get all operations that happened after the client's revision
-  const concurrentOps = state.operations.slice(fromRevision)
-  
-  let transformed = op
+  const state = getDocumentState(documentId);
+
+  // These are the ops our client didn't know about when it made its edit
+  const concurrentOps = state.operations.slice(fromRevision);
+
+  let transformed = op;
   for (const historyOp of concurrentOps) {
-    transformed = transform(transformed, historyOp)
-    if (transformed === null) return null // op became a no-op
+    transformed = transform(transformed, historyOp);
+    if (transformed === null) return null; // became a no-op, stop early
   }
-  
-  return transformed
+
+  return transformed;
 }
 
+/**
+ * Appends an (already-transformed) operation to the document history,
+ * increments the revision counter, and returns the new revision number.
+ *
+ * @param {object} op
+ * @param {string} documentId
+ * @returns {number} new revision
+ */
 export function applyOperation(op, documentId) {
-  const state = getDocumentState(documentId)
-  state.operations.push(op)
-  state.revision++
-  return state.revision
+  const state = getDocumentState(documentId);
+  state.operations.push(op);
+  state.revision++;
+  return state.revision;
 }
 
-// same transform logic as client — must stay identical
+// ── Core transform function ───────────────────────────────────────────────────
+// Adjusts op1's position assuming op2 was already applied to the document.
+// The logic must stay identical to the client-side transform (ot/client.js).
 function transform(op1, op2) {
+
+  // insert vs insert:
+  //   If op2 inserted *before or at* op1's position, op1's position shifts right.
   if (op1.type === 'insert' && op2.type === 'insert') {
     if (op2.position <= op1.position) {
-      return { ...op1, position: op1.position + 1 }
+      return { ...op1, position: op1.position + 1 };
     }
-    return op1
+    return op1;
   }
 
+  // insert vs delete:
+  //   If op2 deleted a character *before* op1's insert position, shift left.
   if (op1.type === 'insert' && op2.type === 'delete') {
     if (op2.position < op1.position) {
-      return { ...op1, position: op1.position - 1 }
+      return { ...op1, position: op1.position - 1 };
     }
-    return op1
+    return op1;
   }
 
+  // delete vs insert:
+  //   If op2 inserted before op1's delete position, the target character
+  //   shifted right, so adjust accordingly.
   if (op1.type === 'delete' && op2.type === 'insert') {
     if (op2.position <= op1.position) {
-      return { ...op1, position: op1.position + 1 }
+      return { ...op1, position: op1.position + 1 };
     }
-    return op1
+    return op1;
   }
 
+  // delete vs delete:
+  //   If op2 deleted *before* op1's position, the target shifted left.
+  //   If op2 deleted the *same* position, the character is already gone → no-op.
   if (op1.type === 'delete' && op2.type === 'delete') {
     if (op2.position < op1.position) {
-      return { ...op1, position: op1.position - 1 }
+      return { ...op1, position: op1.position - 1 };
     }
     if (op2.position === op1.position) {
-      return null
+      return null; // both clients deleted the same character — nothing left to do
     }
-    return op1
+    return op1;
   }
 
-  return op1
+  return op1;
 }
