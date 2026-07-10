@@ -51,7 +51,7 @@ app.use(passport.initialize()); // Passport is used for the Google OAuth 2.0 str
 
 // ── REST routes ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/api/status', (req, res) => res.json({ status: 'active', uptime: process.uptime() }));
+app.get('/api/status', (req, res) => res.json({ status: 'active' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
