@@ -274,18 +274,6 @@ export default function Document() {
     }
   }, [editor, id, localUser])
 
-  // ── Keyboard shortcut: ⌘S / Ctrl+S to save ──────────────────────────────
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        saveDocument()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [saveDocument])
-
   // ── Warn before closing tab with unsaved changes ───────────────────────
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -319,6 +307,18 @@ export default function Document() {
     if (!editor) return
     const interval = setInterval(saveDocument, 3000)
     return () => clearInterval(interval)
+  }, [saveDocument])
+
+  // ── Keyboard shortcut: ⌘S / Ctrl+S to save ──────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        saveDocument()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
   }, [saveDocument])
 
   // ── Share link generation ──────────────────────────────────────────────────

@@ -156,8 +156,8 @@ export default function Dashboard() {
     try {
       const res = await axios.get(`${API}/documents`, { headers })
       // Handle both paginated ({ documents, totalCount }) and legacy (array) responses
-      const docs = Array.isArray(res.data) ? res.data : res.data.documents
-      setDocuments(docs)
+      const docs = Array.isArray(res.data) ? res.data : res.data?.documents
+      setDocuments(docs || [])
     } catch (err) {
       toast.error('Failed to load documents')
     } finally {
