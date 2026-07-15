@@ -266,6 +266,37 @@
   background-size: 800px 100%;
 }
 
+/* Typing cursor blink — used in the Landing hero headline */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.animate-cursor-blink {
+  animation: cursor-blink 0.8s step-end infinite;
+}
+
+/* Scroll-triggered reveal — sections fade in and slide up on scroll */
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.scroll-reveal {
+  opacity: 0;
+}
+.scroll-reveal.revealed {
+  animation: reveal-up 0.6s ease-out forwards;
+}
+
+/* Connection status indicator pulse */
+@keyframes status-pulse {
+  0%        { box-shadow: 0 0 0 0 currentColor; }
+  70%       { box-shadow: 0 0 0 6px transparent; }
+  100%      { box-shadow: 0 0 0 0 transparent; }
+}
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
 /* 10. LIVE CURSORS ----------------------------------------- */
 .collaboration-cursor__caret {
   border-left: 2px solid;

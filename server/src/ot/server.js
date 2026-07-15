@@ -23,10 +23,14 @@
  */
 
 // ── In-memory store ───────────────────────────────────────────────────────────
-// A Map from documentId → { revision: number, operations: Op[] }
+// A Map from documentId → { revision: number, operations: Op[], baseRevision: number }
 // This is intentionally in-memory: documents are also persisted to Postgres via
 // the REST API (auto-save every 3 seconds on the client side).
 const documentStates = new Map();
+
+// Maximum number of operations to keep in memory per document.
+// Once exceeded, the oldest half is pruned and revision numbers are rebased.
+const MAX_HISTORY_SIZE = 1000;
 
 /**
  * Returns (or lazily creates) the OT state for a given document.
@@ -37,7 +41,8 @@ export function getDocumentState(documentId) {
   if (!documentStates.has(documentId)) {
     documentStates.set(documentId, {
       revision: 0,
-      operations: [] // full history — needed to transform late-arriving ops
+      operations: [],   // full history — needed to transform late-arriving ops
+      baseRevision: 0   // tracks how many ops have been pruned from the front
     });
   }
   return documentStates.get(documentId);
@@ -56,8 +61,12 @@ export function getDocumentState(documentId) {
 export function transformAgainstHistory(op, fromRevision, documentId) {
   const state = getDocumentState(documentId);
 
+  // Adjust for pruned history: the client's revision may reference ops that
+  // have been trimmed. In that case, transform against everything we still have.
+  const adjustedIndex = Math.max(0, fromRevision - state.baseRevision);
+
   // These are the ops our client didn't know about when it made its edit
-  const concurrentOps = state.operations.slice(fromRevision);
+  const concurrentOps = state.operations.slice(adjustedIndex);
 
   let transformed = op;
   for (const historyOp of concurrentOps) {
@@ -80,6 +89,15 @@ export function applyOperation(op, documentId) {
   const state = getDocumentState(documentId);
   state.operations.push(op);
   state.revision++;
+
+  // Prune old history to prevent unbounded memory growth.
+  // When the array exceeds the cap, discard the oldest half.
+  if (state.operations.length > MAX_HISTORY_SIZE) {
+    const pruneCount = Math.floor(MAX_HISTORY_SIZE / 2);
+    state.operations = state.operations.slice(pruneCount);
+    state.baseRevision += pruneCount;
+  }
+
   return state.revision;
 }
 

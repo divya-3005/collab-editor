@@ -23,10 +23,16 @@ const router = express.Router();
 // being stored — we never persist the raw password.
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { password, name } = req.body;
+    // Normalise email so "User@Gmail.COM" matches "user@gmail.com"
+    const email = (req.body.email || '').trim().toLowerCase();
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
     // Prevent duplicate accounts for the same email
@@ -65,7 +71,8 @@ router.post('/register', async (req, res) => {
 // leaking whether an account exists (a security best practice).
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = (req.body.email || '').trim().toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });

@@ -31,7 +31,7 @@ import { useTheme } from '../context/ThemeContext'
 import {
   Moon, Sun, Share2, Save, ArrowLeft, Bold, Italic,
   Strikethrough, Heading1, Heading2, List, ListOrdered,
-  Copy, Check, X, History, Clock, RotateCcw, Users
+  Copy, Check, X, History, Clock, RotateCcw, Users, Wifi, WifiOff
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
@@ -90,9 +90,12 @@ export default function Document() {
   const [previewingVersion, setPreviewingVersion] = useState(null)
   const [loadingVersions, setLoadingVersions] = useState(false)
 
-  // ── Presence / live cursors state ─────────────────────────────────────────
+  // ── Presence / live cursors state ─────────────────────────────────────
   const [localUser, setLocalUser] = useState(null)
   const [remoteUsers, setRemoteUsers] = useState(new Map())
+
+  // ── Connection status ──────────────────────────────────────────────────
+  const [isConnected, setIsConnected] = useState(false)
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   // isApplyingRemote prevents the editor's onUpdate from re-emitting content
@@ -250,6 +253,11 @@ export default function Document() {
       labelTimeoutRefs.current.set(data.socketId, timeout)
     })
 
+    // ── Connection status tracking ───────────────────────────────────────
+    socket.on('connect', () => setIsConnected(true))
+    socket.on('disconnect', () => setIsConnected(false))
+    if (socket.connected) setIsConnected(true)
+
     return () => {
       // Clean up all socket listeners and disconnect on unmount
       socket.off('content-update')
@@ -257,12 +265,37 @@ export default function Document() {
       socket.off('user-joined')
       socket.off('user-left')
       socket.off('cursor-move')
+      socket.off('connect')
+      socket.off('disconnect')
       socket.disconnect()
 
       // Clear all pending label-hide timers
       labelTimeoutRefs.current.forEach(clearTimeout)
     }
   }, [editor, id, localUser])
+
+  // ── Keyboard shortcut: ⌘S / Ctrl+S to save ──────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        saveDocument()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [saveDocument])
+
+  // ── Warn before closing tab with unsaved changes ───────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (editor && !editor.isEmpty) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [editor])
 
   // ── Auto-save every 3 seconds ──────────────────────────────────────────────
   // Persists the current title + HTML content to the database.
@@ -407,11 +440,16 @@ export default function Document() {
     })
   }
 
-  // ── Word count (derived from editor content) ───────────────────────────────
+  // ── Word + character count (derived from editor content) ───────────────────
   const wordCount = useMemo(() => {
     if (!editor) return 0
     const text = editor.getText()
     return text.trim() === '' ? 0 : text.trim().split(/\s+/).length
+  }, [editor?.state])
+
+  const charCount = useMemo(() => {
+    if (!editor) return 0
+    return editor.getText().length
   }, [editor?.state])
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -441,6 +479,16 @@ export default function Document() {
           {/* Right: save status, collaborators, actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
 
+            {/* Connection status indicator */}
+            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${
+              isConnected
+                ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40'
+                : 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/40'
+            }`}>
+              {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+              <span className="w-1.5 h-1.5 rounded-full status-pulse" style={{ color: isConnected ? '#10b981' : '#ef4444', backgroundColor: isConnected ? '#10b981' : '#ef4444' }} />
+            </div>
+
             {/* Auto-save status */}
             <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">
               {saving ? 'Saving…' : lastSaved ? `Saved ${formatTime(lastSaved)}` : ''}
@@ -449,8 +497,6 @@ export default function Document() {
             {/* Live collaborator avatars with tooltips */}
             {remoteUsers.size > 0 && (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1">
-                {/* Pulsing green dot signals active collaboration */}
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 presence-dot flex-shrink-0" />
                 {Array.from(remoteUsers.values()).map(user => (
                   <div
                     key={user.socketId}
@@ -543,9 +589,11 @@ export default function Document() {
             <ListOrdered size={15} />
           </ToolbarBtn>
 
-          {/* Word count — updates reactively as the user types */}
-          <div className="ml-auto flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 pr-1">
+          {/* Word + character count — updates reactively as the user types */}
+          <div className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 pr-1">
             <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+            <span className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+            <span>{charCount.toLocaleString()} chars</span>
           </div>
         </div>
       </div>

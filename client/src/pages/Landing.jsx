@@ -11,7 +11,7 @@
  *   - Footer        minimal branding line
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { Moon, Sun, ArrowRight, Users, FileText, Share2, Zap, Lock, Edit3, ExternalLink } from 'lucide-react'
@@ -81,6 +81,42 @@ export default function Landing() {
     }
   }, [navigate])
 
+  // ── Typing animation for the hero headline ──────────────────────────────
+  const fullText = 'in real time'
+  const [typedText, setTypedText] = useState('')
+  const [showCursor, setShowCursor] = useState(true)
+
+  useEffect(() => {
+    let i = 0
+    const timer = setInterval(() => {
+      i++
+      setTypedText(fullText.slice(0, i))
+      if (i >= fullText.length) {
+        clearInterval(timer)
+        // Hide cursor 2 seconds after typing finishes
+        setTimeout(() => setShowCursor(false), 2000)
+      }
+    }, 80)
+    return () => clearInterval(timer)
+  }, [])
+
+  // ── Scroll-reveal for below-the-fold sections ───────────────────────────
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('revealed')
+            observer.unobserve(entry.target) // Only animate once
+          }
+        })
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+    )
+    document.querySelectorAll('.scroll-reveal').forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <div className="min-h-screen bg-white dark:bg-[#0d0f14] font-sans transition-colors duration-200 overflow-x-hidden">
 
@@ -130,8 +166,11 @@ export default function Landing() {
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-[1.08] mb-6">
             Write together,{' '}
             <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 dark:from-indigo-400 dark:via-violet-400 dark:to-indigo-300 bg-clip-text text-transparent">
-              in real time
+              {typedText}
             </span>
+            {showCursor && (
+              <span className="inline-block w-[3px] h-[0.85em] bg-indigo-500 dark:bg-indigo-400 ml-1 align-baseline animate-cursor-blink rounded-sm" />
+            )}
           </h1>
 
           <p className="text-xl text-gray-500 dark:text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
@@ -213,7 +252,7 @@ export default function Landing() {
       </section>
 
       {/* ── Features ───────────────────────────────────────────────────────── */}
-      <section className="py-24 px-6 border-t border-gray-100 dark:border-white/[0.06]">
+      <section className="scroll-reveal py-24 px-6 border-t border-gray-100 dark:border-white/[0.06]">
         <div className="max-w-5xl mx-auto">
           <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest text-center mb-3">Capabilities</p>
           <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white text-center tracking-tight mb-4">
@@ -242,7 +281,7 @@ export default function Landing() {
       </section>
 
       {/* ── How it works ───────────────────────────────────────────────────── */}
-      <section className="py-24 px-6 bg-gray-50 dark:bg-[#0d1117] border-y border-gray-100 dark:border-white/[0.06]">
+      <section className="scroll-reveal py-24 px-6 bg-gray-50 dark:bg-[#0d1117] border-y border-gray-100 dark:border-white/[0.06]">
         <div className="max-w-5xl mx-auto">
           <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest text-center mb-3">Workflow</p>
           <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white text-center tracking-tight mb-16">
@@ -263,7 +302,7 @@ export default function Landing() {
       </section>
 
       {/* ── Tech stack ─────────────────────────────────────────────────────── */}
-      <section className="py-20 px-6 border-b border-gray-100 dark:border-white/[0.06]">
+      <section className="scroll-reveal py-20 px-6 border-b border-gray-100 dark:border-white/[0.06]">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-10">Built with</p>
           <div className="space-y-5">
@@ -284,7 +323,7 @@ export default function Landing() {
       </section>
 
       {/* ── CTA ────────────────────────────────────────────────────────────── */}
-      <section className="py-28 px-6">
+      <section className="scroll-reveal py-28 px-6">
         <div className="max-w-2xl mx-auto text-center">
           {/* Glassmorphism glow card */}
           <div className="relative rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 p-px shadow-2xl shadow-indigo-500/40">

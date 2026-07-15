@@ -16,7 +16,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search } from 'lucide-react'
+import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search, ArrowUpDown } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
@@ -100,9 +100,11 @@ export default function Dashboard() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortOrder, setSortOrder] = useState('recent') // 'recent' | 'title'
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const menuRef = useRef(null)
+  const searchRef = useRef(null)
 
   // ── Router / context ───────────────────────────────────────────────────────
   const navigate = useNavigate()
@@ -129,11 +131,33 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // ── Keyboard shortcut: ⌘K / Ctrl+K to focus search ────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // ── Tab title shows document count ─────────────────────────────────────────
+  useEffect(() => {
+    if (!loading) {
+      document.title = `(${documents.length}) Your Documents — CollabDocs`
+    }
+    return () => { document.title = 'CollabDocs — Real-Time Collaborative Editor' }
+  }, [documents.length, loading])
+
   // ── API: load document list ────────────────────────────────────────────────
   const fetchDocuments = async () => {
     try {
       const res = await axios.get(`${API}/documents`, { headers })
-      setDocuments(res.data)
+      // Handle both paginated ({ documents, totalCount }) and legacy (array) responses
+      const docs = Array.isArray(res.data) ? res.data : res.data.documents
+      setDocuments(docs)
     } catch (err) {
       toast.error('Failed to load documents')
     } finally {
@@ -191,10 +215,18 @@ export default function Dashboard() {
     }
   }
 
-  // ── Derived: filtered document list ───────────────────────────────────────
-  const filteredDocs = documents.filter(doc =>
-    (doc.title || 'Untitled Document').toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // ── Derived: filtered + sorted document list ─────────────────────────────
+  const filteredDocs = documents
+    .filter(doc =>
+      (doc.title || 'Untitled Document').toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      if (sortOrder === 'title') {
+        return (a.title || 'Untitled Document').localeCompare(b.title || 'Untitled Document')
+      }
+      // Default: most recently edited first
+      return new Date(b.updatedAt) - new Date(a.updatedAt)
+    })
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -292,25 +324,37 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Search bar — only shown when there are documents to filter */}
+        {/* Search bar + sort — only shown when there are documents to filter */}
         {!loading && documents.length > 0 && (
-          <div className="relative mb-5">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search documents…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 text-sm bg-white dark:bg-[#161b27] border border-gray-200 dark:border-white/[0.08] rounded-xl text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xs"
-              >
-                ✕
-              </button>
-            )}
+          <div className="flex gap-2 mb-5">
+            <div className="relative flex-1">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search documents… (⌘K)"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 text-sm bg-white dark:bg-[#161b27] border border-gray-200 dark:border-white/[0.08] rounded-xl text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {/* Sort toggle */}
+            <button
+              onClick={() => setSortOrder(s => s === 'recent' ? 'title' : 'recent')}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-[#161b27] rounded-xl text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-white/[0.15] hover:text-gray-700 dark:hover:text-gray-200 transition-all flex-shrink-0"
+              title={`Sort: ${sortOrder === 'recent' ? 'Last edited' : 'Title A–Z'}`}
+            >
+              <ArrowUpDown size={14} />
+              <span className="hidden sm:inline">{sortOrder === 'recent' ? 'Recent' : 'A–Z'}</span>
+            </button>
           </div>
         )}
 

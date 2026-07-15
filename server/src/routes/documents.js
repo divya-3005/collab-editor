@@ -31,12 +31,22 @@ const router = express.Router();
 // payload small.
 router.get('/', authenticate, async (req, res) => {
   try {
-    const documents = await prisma.document.findMany({
-      where: { ownerId: req.userId },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, title: true, createdAt: true, updatedAt: true }
-    });
-    res.json(documents);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [documents, totalCount] = await Promise.all([
+      prisma.document.findMany({
+        where: { ownerId: req.userId },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true, createdAt: true, updatedAt: true },
+        skip,
+        take: limit
+      }),
+      prisma.document.count({ where: { ownerId: req.userId } })
+    ]);
+
+    res.json({ documents, totalCount, page, limit });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

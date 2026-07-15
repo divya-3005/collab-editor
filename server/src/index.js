@@ -23,6 +23,8 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import passport from 'passport';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 // ── Local routes ─────────────────────────────────────────────────────────────
 import authRoutes from './routes/auth.js';
@@ -45,17 +47,27 @@ const io = new Server(httpServer, {
 });
 
 // ── Express middleware ───────────────────────────────────────────────────────
+app.use(helmet());                                    // Security headers (HSTS, X-Content-Type, etc.)
 app.use(cors({ origin: process.env.CLIENT_URL }));
-app.use(express.json());
-app.use(passport.initialize()); // Passport is used for the Google OAuth 2.0 strategy
+app.use(express.json({ limit: '1mb' }));              // Prevent oversized payloads
+app.use(passport.initialize());                       // Passport is used for the Google OAuth 2.0 strategy
+
+// ── Rate limiting — auth routes only ─────────────────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15-minute window
+  max: 15,                     // 15 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again later.' }
+});
 
 // ── REST routes ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/status', (req, res) => res.json({ status: 'active' }));
 
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/documents', documentRoutes);
-app.use('/api/auth/google', googleAuthRoutes);
+app.use('/api/auth/google', authLimiter, googleAuthRoutes);
 
 // ── Socket.io real-time events ───────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -182,3 +194,20 @@ const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`server running on port ${PORT}`);
 });
+
+// ── Graceful shutdown ────────────────────────────────────────────────────────
+// Ensures in-flight requests and socket connections close cleanly on SIGTERM
+// (e.g. Docker stop, Render deploys). Without this, connections are killed mid-request.
+const shutdown = () => {
+  console.log('SIGTERM received — shutting down gracefully…');
+  io.close(() => {
+    httpServer.close(() => {
+      console.log('Server closed.');
+      process.exit(0);
+    });
+  });
+  // Force-kill after 10 seconds if connections don't close in time
+  setTimeout(() => process.exit(1), 10000);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
