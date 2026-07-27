@@ -111,8 +111,9 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
 
-  // ── Auth headers ───────────────────────────────────────────────────────────
+  // ── Auth headers & User Data ───────────────────────────────────────────────
   const headers = useAuthHeaders()
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
 
   // ── Fetch documents on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -156,7 +157,6 @@ export default function Dashboard() {
   // added as a future enhancement.
   const fetchDocuments = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}')
       const res = await axios.get(`${API}/documents?limit=500`, { headers })
       const docs = Array.isArray(res.data) ? res.data : res.data?.documents
       setDocuments(docs || [])
