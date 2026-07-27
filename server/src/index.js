@@ -1,213 +1,369 @@
 /**
- * Entry point for the CollabDocs server.
+ * index.js — CollabDocs server entry point.
  *
  * Architecture:
- *   - Express  → handles REST API routes (auth, documents)
- *   - Socket.io → manages real-time WebSocket connections for collaborative editing
- *   - OT module → applies Operational Transformation so concurrent edits from
- *                  multiple clients never corrupt the document
+ *   - Express  → REST API (auth, documents, version history)
+ *   - Socket.io → Real-time WebSocket layer for collaborative editing
+ *   - Collab module → Step-based collaboration protocol (replaces character-OT)
  *
- * Key flows:
- *   1. A client opens a document → "join-document" event
- *   2. A client types → "content-update" or "operation" event → server broadcasts to peers
- *   3. A client moves the cursor → "cursor-move" event → server relays to peers
- *   4. A client disconnects → "disconnecting" event → server notifies room
+ * Security:
+ *   - All WebSocket connections require a valid auth JWT (io.use middleware).
+ *   - All socket event handlers are wrapped in try/catch to prevent server
+ *     crashes from malformed payloads.
+ *
+ * Collaboration protocol (replaces the previous content-update broadcast):
+ *   - Clients send serialized ProseMirror steps via 'collab-steps'.
+ *   - The server sequences them with monotonic version numbers and broadcasts
+ *     to peers. The server itself does not interpret the step content — it acts
+ *     as a reliable sequencer. ProseMirror on the client handles transformation
+ *     and rebasing via the @tiptap/pm/collab utilities.
+ *   - The full document HTML is still persisted to Postgres via REST autosave
+ *     for recovery and version history; steps are kept in-memory for the
+ *     current session only.
  */
 
-// ── Env & Core ──────────────────────────────────────────────────────────────
-import './loadEnv.js';
-import express from 'express';
-import { createServer } from 'http';
+// ── Env & Core ───────────────────────────────────────────────────────────────
+import './loadEnv.js'
+import express from 'express'
+import { createServer } from 'http'
 
 // ── Third-party ──────────────────────────────────────────────────────────────
-import { Server } from 'socket.io';
-import cors from 'cors';
-import passport from 'passport';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { Server } from 'socket.io'
+import cors from 'cors'
+import passport from 'passport'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import jwt from 'jsonwebtoken'
 
 // ── Local routes ─────────────────────────────────────────────────────────────
-import authRoutes from './routes/auth.js';
-import documentRoutes from './routes/documents.js';
-import googleAuthRoutes from './routes/googleAuth.js';
+import authRoutes from './routes/auth.js'
+import documentRoutes from './routes/documents.js'
+import googleAuthRoutes from './routes/googleAuth.js'
 
-// ── Operational Transformation helpers ──────────────────────────────────────
-import { getDocumentState, transformAgainstHistory, applyOperation } from './ot/server.js';
+// ── Persistence ──────────────────────────────────────────────────────────────
+import prisma from './lib/prisma.js'
 
-// ── App & HTTP server setup ──────────────────────────────────────────────────
-const app = express();
-const httpServer = createServer(app); // Socket.io must share the same http.Server as Express
+// ── Collaboration module ─────────────────────────────────────────────────────
+import {
+  getCollabState,
+  addSteps,
+  getStepsSince
+} from './ot/collab.js'
 
-// ── Socket.io configuration ──────────────────────────────────────────────────
+// ── App & HTTP server ────────────────────────────────────────────────────────
+const app = express()
+const httpServer = createServer(app)
+
+// ── Socket.io ────────────────────────────────────────────────────────────────
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL,
+    origin:  process.env.CLIENT_URL,
     methods: ['GET', 'POST']
   }
-});
+})
 
 // ── Express middleware ───────────────────────────────────────────────────────
-app.use(helmet());                                    // Security headers (HSTS, X-Content-Type, etc.)
-app.use(cors({ origin: process.env.CLIENT_URL }));
-app.use(express.json({ limit: '1mb' }));              // Prevent oversized payloads
-app.use(passport.initialize());                       // Passport is used for the Google OAuth 2.0 strategy
+app.use(helmet())
+app.use(cors({ origin: process.env.CLIENT_URL }))
+app.use(express.json({ limit: '2mb' }))
+app.use(passport.initialize())
 
-// ── Rate limiting — auth routes only ─────────────────────────────────────────
+// Trust the first proxy (needed for accurate IP-based rate limiting on Render/Heroku)
+app.set('trust proxy', 1)
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,   // 15-minute window
-  max: 15,                     // 15 attempts per window per IP
+  windowMs:       15 * 60 * 1000, // 15-minute window
+  max:            15,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders:  false,
   message: { error: 'Too many attempts. Please try again later.' }
-});
+})
 
-// ── REST routes ──────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/api/status', (req, res) => res.json({ status: 'active' }));
+const documentLimiter = rateLimit({
+  windowMs:       60 * 1000, // 1-minute window
+  max:            120,        // generous for autosave (every 3s = 20/min per user)
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { error: 'Too many requests. Please slow down.' }
+})
 
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/documents', documentRoutes);
-app.use('/api/auth/google', authLimiter, googleAuthRoutes);
+// ── REST routes ───────────────────────────────────────────────────────────────
+app.get('/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    res.json({ status: 'ok', db: 'ok', uptime: process.uptime() })
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'error', uptime: process.uptime() })
+  }
+})
 
-// ── Socket.io real-time events ───────────────────────────────────────────────
+app.get('/api/status', (req, res) => res.json({ status: 'active' }))
+
+app.use('/api/auth',         authLimiter,     authRoutes)
+app.use('/api/auth/google',  authLimiter,     googleAuthRoutes)
+app.use('/api/documents',    documentLimiter, documentRoutes)
+
+// ── WebSocket Authentication middleware ───────────────────────────────────────
+// Runs before io.on('connection'). Every socket must present a valid auth JWT.
+// This closes the unauthenticated WebSocket access vector that previously allowed
+// any client to join any document room and read or inject content.
+io.use((socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.replace('Bearer ', '')
+
+    if (!token) {
+      return next(new Error('Authentication required'))
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+
+    // Reject non-auth tokens (e.g. share tokens)
+    if (decoded.type !== 'auth') {
+      return next(new Error('Invalid token type'))
+    }
+
+    // Attach userId to the socket so all handlers can reference it
+    socket.data.userId = decoded.userId
+    next()
+  } catch {
+    next(new Error('Invalid or expired token'))
+  }
+})
+
+// ── Per-socket event rate limiter ─────────────────────────────────────────────
+// Tracks event counts in a 1-second sliding window per socket.
+// Prevents a buggy or malicious client from flooding the broadcast channel.
+const SOCKET_RATE_LIMIT = 60 // max events per second per socket
+
+function makeRateLimiter() {
+  let count = 0
+  let windowStart = Date.now()
+
+  return function isAllowed() {
+    const now = Date.now()
+    if (now - windowStart > 1000) {
+      count = 0
+      windowStart = now
+    }
+    count++
+    return count <= SOCKET_RATE_LIMIT
+  }
+}
+
+// ── Socket.io real-time events ────────────────────────────────────────────────
 io.on('connection', (socket) => {
-  console.log('user connected:', socket.id);
+  const rateLimiter = makeRateLimiter()
 
-  // ── Room management ─────────────────────────────────────────────────────
-  // A "room" maps 1:1 to a documentId so broadcasts only reach relevant clients.
+  // ── Room management ───────────────────────────────────────────────────────
+  // A "room" maps 1:1 to a documentId; broadcasts only reach relevant clients.
   socket.on('join-document', (payload) => {
-    // Payload can be a plain string (legacy) or { documentId, user }
-    let documentId, user;
-    if (typeof payload === 'string') {
-      documentId = payload;
-    } else {
-      documentId = payload.documentId;
-      user = payload.user;
-    }
+    try {
+      if (!rateLimiter()) return
 
-    socket.join(documentId);
-    socket.data.currentDocumentId = documentId;
+      const documentId = typeof payload === 'string' ? payload : payload?.documentId
+      const user       = typeof payload === 'object'  ? payload?.user : null
 
-    // Announce the new user to everyone already in the room
-    if (user) {
-      socket.data.user = user;
-      socket.to(documentId).emit('user-joined', { socketId: socket.id, ...user });
-    }
+      if (!documentId) return
 
-    // Tell the joining client what revision the server is at so the OT
-    // module can compute which operations it needs to transform against.
-    const state = getDocumentState(documentId);
-    socket.emit('document-revision', { revision: state.revision });
+      socket.join(documentId)
+      socket.data.currentDocumentId = documentId
 
-    // Broadcast updated participant count to the whole room
-    const count = io.sockets.adapter.rooms.get(documentId)?.size || 0;
-    io.to(documentId).emit('user-count', count);
-
-    console.log(`socket ${socket.id} joined document ${documentId}`);
-  });
-
-  // ── Presence ─────────────────────────────────────────────────────────────
-  // Lets a newly joined client request the full list of users already online.
-  socket.on('get-presence', (documentId) => {
-    const room = io.sockets.adapter.rooms.get(documentId);
-    if (!room) return;
-
-    const presence = [];
-    for (const sid of room) {
-      if (sid === socket.id) continue; // Exclude the requester from their own list
-      const clientSocket = io.sockets.sockets.get(sid);
-      if (clientSocket && clientSocket.data.user) {
-        presence.push({ socketId: sid, ...clientSocket.data.user });
+      if (user) {
+        socket.data.user = { ...user, userId: socket.data.userId }
+        socket.to(documentId).emit('user-joined', { socketId: socket.id, ...user })
       }
+
+      // Send the current collaboration version so the client knows what steps
+      // it may have missed (used in reconnect logic).
+      const state = getCollabState(documentId)
+      socket.emit('collab-init', { version: state.version })
+
+      const count = io.sockets.adapter.rooms.get(documentId)?.size || 0
+      io.to(documentId).emit('user-count', count)
+    } catch (err) {
+      console.error('join-document error:', err.message)
     }
-    socket.emit('presence-list', presence);
-  });
+  })
 
-  // ── Operational Transformation ───────────────────────────────────────────
-  // Operations from different clients may have been based on different revisions.
-  // We transform the incoming op against the history since the client's revision,
-  // apply it to the server state, then broadcast the result to peers.
-  socket.on('operation', ({ documentId, operation, revision }) => {
-    const transformed = transformAgainstHistory(operation, revision, documentId);
+  // ── Presence ──────────────────────────────────────────────────────────────
+  socket.on('get-presence', (documentId) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId) return
 
-    if (transformed === null) {
-      // The operation became a no-op after transformation (e.g. two clients
-      // deleted the same character). Nothing to broadcast.
-      return;
+      const room = io.sockets.adapter.rooms.get(documentId)
+      if (!room) return
+
+      const presence = []
+      for (const sid of room) {
+        if (sid === socket.id) continue
+        const peer = io.sockets.sockets.get(sid)
+        if (peer?.data?.user) {
+          presence.push({ socketId: sid, ...peer.data.user })
+        }
+      }
+      socket.emit('presence-list', presence)
+    } catch (err) {
+      console.error('get-presence error:', err.message)
     }
+  })
 
-    const newRevision = applyOperation(transformed, documentId);
+  // ── Collaboration step protocol ───────────────────────────────────────────
+  // Clients send serialized ProseMirror steps via this event.
+  //
+  // Payload: { documentId, version, steps: StepJSON[], clientID }
+  //
+  // The server:
+  //  1. Checks the client's version matches the current server version.
+  //     If the client is behind, it rejects and asks the client to catch up.
+  //  2. Appends the steps with monotonically increasing version numbers.
+  //  3. Broadcasts the steps to all peers so they can apply them.
+  //  4. Acknowledges the sender with the new version.
+  //
+  // Conflict resolution is handled entirely on the client using
+  // @tiptap/pm/collab (receiveTransaction + sendableSteps). The server is a
+  // pure step sequencer — it does not interpret step content.
+  socket.on('collab-steps', ({ documentId, version, steps, clientID }) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId || !Array.isArray(steps) || steps.length === 0) return
 
-    // Broadcast the transformed operation to every other client in the room
-    socket.to(documentId).emit('operation', {
-      operation: transformed,
-      revision: newRevision
-    });
+      const state = getCollabState(documentId)
 
-    // Acknowledge the sender with the new server revision so they can advance
-    socket.emit('operation-ack', { revision: newRevision });
-  });
+      // Version mismatch: client is behind. Tell them to sync first.
+      if (version !== state.version) {
+        const missing = getStepsSince(documentId, version)
+        socket.emit('collab-sync', {
+          version:  state.version,
+          steps:    missing.steps,
+          clientIDs: missing.clientIDs
+        })
+        return
+      }
 
-  // ── Disconnect handling ──────────────────────────────────────────────────
-  // "disconnecting" fires while the socket is still in its rooms, so we can
-  // still broadcast to them before the socket is removed.
+      // Append steps and advance version
+      const newVersion = addSteps(documentId, steps, clientID)
+
+      // Broadcast to peers (everyone except the sender)
+      socket.to(documentId).emit('collab-steps', {
+        version:   newVersion,
+        steps,
+        clientID
+      })
+
+      // Acknowledge the sender
+      socket.emit('collab-ack', { version: newVersion })
+    } catch (err) {
+      console.error('collab-steps error:', err.message)
+    }
+  })
+
+  // ── Collab reconnect / catch-up ───────────────────────────────────────────
+  // When a client reconnects after a network drop, it sends its last known
+  // version. The server responds with all steps since that version.
+  socket.on('collab-catch-up', ({ documentId, version }) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId) return
+
+      const missing = getStepsSince(documentId, version)
+      socket.emit('collab-sync', {
+        version:   missing.currentVersion,
+        steps:     missing.steps,
+        clientIDs: missing.clientIDs
+      })
+    } catch (err) {
+      console.error('collab-catch-up error:', err.message)
+    }
+  })
+
+  // ── Live cursor positions ─────────────────────────────────────────────────
+  socket.on('cursor-move', ({ documentId, position, name, color }) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId) return
+
+      socket.to(documentId).emit('cursor-move', {
+        socketId: socket.id,
+        position,
+        name,
+        color
+      })
+    } catch (err) {
+      console.error('cursor-move error:', err.message)
+    }
+  })
+
+  // ── Version restore broadcast ─────────────────────────────────────────────
+  // Emitted by a client (via useVersionHistory) after a successful REST restore.
+  // The server resets the in-memory collab state for this document (so all
+  // version counters go back to 0) and broadcasts `collab-reset` to all peers
+  // so they reload and re-join with the fresh document content.
+  socket.on('collab-restore', ({ documentId }) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId) return
+
+      // Evict and re-create the collab state → version resets to 0
+      evictDocument(documentId)
+
+      // Tell all peers (including the restorer) to reload
+      io.to(documentId).emit('collab-reset')
+    } catch (err) {
+      console.error('collab-restore error:', err.message)
+    }
+  })
+
+  // ── Disconnect handling ───────────────────────────────────────────────────
   socket.on('disconnecting', () => {
-    for (const room of socket.rooms) {
-      if (room === socket.id) continue; // Skip the socket's own private room
-
-      const currentSize = io.sockets.adapter.rooms.get(room)?.size || 0;
-      const newCount = Math.max(0, currentSize - 1);
-      io.to(room).emit('user-count', newCount);
-
-      // Remove this user's cursor from all peers
-      socket.to(room).emit('user-left', socket.id);
+    try {
+      for (const room of socket.rooms) {
+        if (room === socket.id) continue
+        const currentSize = io.sockets.adapter.rooms.get(room)?.size || 0
+        const newCount = Math.max(0, currentSize - 1)
+        io.to(room).emit('user-count', newCount)
+        socket.to(room).emit('user-left', socket.id)
+      }
+    } catch (err) {
+      console.error('disconnecting error:', err.message)
     }
-  });
+  })
 
   socket.on('disconnect', () => {
-    console.log('user disconnected:', socket.id);
-  });
+    console.log('user disconnected:', socket.id)
+  })
+})
 
-  // ── Content sync (simple full-document strategy) ─────────────────────────
-  // In addition to granular OT operations, clients also sync the full HTML
-  // content on every editor update. This is a fallback to keep all clients
-  // consistent even if an OT operation is dropped.
-  socket.on('content-update', ({ documentId, content }) => {
-    socket.to(documentId).emit('content-update', { content });
-  });
-
-  // ── Live cursor positions ────────────────────────────────────────────────
-  // Each client emits their cursor position (ProseMirror document offset)
-  // so peers can render the coloured cursor widget via the LiveCursors extension.
-  socket.on('cursor-move', ({ documentId, position, name, color }) => {
-    socket.to(documentId).emit('cursor-move', {
-      socketId: socket.id,
-      position,
-      name,
-      color
-    });
-  });
-});
-
-// ── Start ────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
+// ── Start ─────────────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3001
 httpServer.listen(PORT, () => {
-  console.log(`server running on port ${PORT}`);
-});
+  console.log(`server running on port ${PORT}`)
+})
 
-// ── Graceful shutdown ────────────────────────────────────────────────────────
-// Ensures in-flight requests and socket connections close cleanly on SIGTERM
-// (e.g. Docker stop, Render deploys). Without this, connections are killed mid-request.
+// ── Graceful shutdown ──────────────────────────────────────────────────────────
 const shutdown = () => {
-  console.log('SIGTERM received — shutting down gracefully…');
+  console.log('SIGTERM received — shutting down gracefully…')
   io.close(() => {
     httpServer.close(() => {
-      console.log('Server closed.');
-      process.exit(0);
-    });
-  });
-  // Force-kill after 10 seconds if connections don't close in time
-  setTimeout(() => process.exit(1), 10000);
-};
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+      console.log('Server closed.')
+      process.exit(0)
+    })
+  })
+  setTimeout(() => process.exit(1), 10_000)
+}
+process.on('SIGTERM', shutdown)
+process.on('SIGINT',  shutdown)
+
+// ── Unhandled error safety nets ────────────────────────────────────────────────
+// Log and exit — continuing after an uncaught exception risks undefined state.
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION — shutting down:', err)
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason)
+  process.exit(1)
+})

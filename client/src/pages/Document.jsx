@@ -1,19 +1,33 @@
 /**
  * Document.jsx — Collaborative rich-text editor page.
  *
- * Responsibilities:
- *   - Load a document from the REST API
- *   - Mount the Tiptap editor (StarterKit + LiveCursors extension)
- *   - Connect to Socket.io and join the document's real-time room
- *   - Sync content changes bidirectionally (local typing → server → peers)
- *   - Relay live cursor positions to and from remote users
- *   - Auto-save every 3 seconds via REST PATCH
- *   - Manage version history (snapshots, preview, restore)
- *   - Render a share modal for generating signed share links
+ * Architecture:
+ *   This component is a composition of focused custom hooks. It owns no async
+ *   logic directly — all data fetching, persistence, presence, and real-time
+ *   collaboration are delegated to their respective hooks.
+ *
+ * Hook responsibilities:
+ *   useAuthHeaders      — builds the memoised Authorization header object
+ *   useDocumentData     — fetches document from REST, owns title state
+ *   useAutoSave         — periodic save, ⌘S, isDirty tracking, beforeunload
+ *   useVersionHistory   — snapshot/preview/restore operations
+ *   usePresence         — remote user map, cursor label timers
+ *   useCollabSocket     — socket lifecycle, ProseMirror step-based collaboration
+ *
+ * Collaboration protocol:
+ *   The previous content-update broadcast (full HTML on every keystroke) has
+ *   been replaced with a ProseMirror step-based protocol. Changes are sent as
+ *   serialised ProseMirror Step JSON objects via `collab-steps`. The server
+ *   sequences them; peers apply them via receiveTransaction which correctly
+ *   rebases concurrent edits using ProseMirror's Mapping system.
+ *
+ *   This correctly handles all rich-text operations: bold, italic, headings,
+ *   lists, blockquotes, code blocks, and concurrent formatting changes —
+ *   which the previous character-OT engine could not represent.
  */
 
 // ── Imports ───────────────────────────────────────────────────────────────────
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 
@@ -21,33 +35,39 @@ import axios from 'axios'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { LiveCursors, cursorPluginKey } from '../extensions/LiveCursors.js'
+import { Collaboration } from '../extensions/Collaboration.js'
 
-// Real-time communication
+// Real-time
 import socket from '../socket/socket.js'
 
-// UI utilities
+// Custom hooks
+import { useAuthHeaders }    from '../hooks/useAuthHeaders.js'
+import { useDocumentData }   from '../hooks/useDocumentData.js'
+import { useAutoSave }       from '../hooks/useAutoSave.js'
+import { useVersionHistory } from '../hooks/useVersionHistory.js'
+import { usePresence }       from '../hooks/usePresence.js'
+import { useCollabSocket }   from '../hooks/useCollabSocket.js'
+
+// UI
 import toast from 'react-hot-toast'
 import { useTheme } from '../context/ThemeContext'
 import {
   Moon, Sun, Share2, Save, ArrowLeft, Bold, Italic,
   Strikethrough, Heading1, Heading2, List, ListOrdered,
-  Copy, Check, X, History, Clock, RotateCcw, Users, Wifi, WifiOff
+  Copy, Check, X, History, Clock, RotateCcw, Wifi, WifiOff
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-/**
- * A single icon button in the editor toolbar.
- * `active` applies a highlighted background when the format is currently applied.
- */
-function ToolbarBtn({ onClick, active, title, children }) {
+function ToolbarBtn({ onClick, active, title, disabled, children }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`p-1.5 rounded-md transition-colors ${
+      disabled={disabled}
+      className={`p-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
         active
           ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
           : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
@@ -58,103 +78,122 @@ function ToolbarBtn({ onClick, active, title, children }) {
   )
 }
 
-/** Visual separator between toolbar button groups */
 function ToolbarDivider() {
   return <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1 flex-shrink-0" />
 }
 
+// ── SaveErrorBanner — surfaces autosave failures to the user ─────────────────
+function SaveErrorBanner({ error, onRetry }) {
+  if (!error) return null
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-red-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg">
+      <span>⚠️ {error}</span>
+      <button
+        onClick={onRetry}
+        className="underline underline-offset-2 hover:no-underline transition-all"
+      >
+        Retry
+      </button>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Document() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const token = localStorage.getItem('token')
-  // Memoised so it doesn't re-create on every render (used in useCallback deps)
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
+  const { id }     = useParams()
+  const navigate   = useNavigate()
   const { theme, toggleTheme } = useTheme()
 
-  // ── Document state ─────────────────────────────────────────────────────────
-  const [title, setTitle] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [lastSaved, setLastSaved] = useState(null)
+  // ── Auth headers ──────────────────────────────────────────────────────────
+  const headers = useAuthHeaders()
 
-  // ── Share modal state ──────────────────────────────────────────────────────
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [shareUrl, setShareUrl] = useState('')
+  // ── Share modal state ─────────────────────────────────────────────────────
+  const [showShareModal,  setShowShareModal]  = useState(false)
+  const [shareUrl,        setShareUrl]        = useState('')
   const [sharePermission, setSharePermission] = useState('view')
-  const [copied, setCopied] = useState(false)
-  const [generatingLink, setGeneratingLink] = useState(false)
+  const [copied,          setCopied]          = useState(false)
+  const [generatingLink,  setGeneratingLink]  = useState(false)
 
-  // ── Version history state ──────────────────────────────────────────────────
-  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
-  const [versions, setVersions] = useState([])
-  const [previewingVersion, setPreviewingVersion] = useState(null)
-  const [loadingVersions, setLoadingVersions] = useState(false)
-
-  // ── Presence / live cursors state ─────────────────────────────────────
-  const [localUser, setLocalUser] = useState(null)
-  const [remoteUsers, setRemoteUsers] = useState(new Map())
-
-  // ── Connection status ──────────────────────────────────────────────────
+  // ── Connection status ─────────────────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false)
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
-  // isApplyingRemote prevents the editor's onUpdate from re-emitting content
-  // that just arrived from the server (infinite loop guard)
-  const isApplyingRemote = useRef(false)
-  // Throttle cursor emissions to at most once per 50 ms
-  const cursorThrottleRef = useRef(null)
-  // Tracks per-user label-hide timers (name label fades after 3s of inactivity)
-  const labelTimeoutRefs = useRef(new Map())
-
-  // ── Initialise local user with a random colour ─────────────────────────────
-  // Each user in the room gets a random colour for their cursor. This runs once
-  // on mount and produces a stable colour for the session.
+  // ── Local user identity (colour-coded presence dot) ───────────────────────
+  // Generated once per mount; stable across re-renders.
+  const [localUser, setLocalUser] = useState(null)
   useEffect(() => {
-    const userJson = localStorage.getItem('user')
-    const user = userJson ? JSON.parse(userJson) : { name: 'Guest' }
-    const colors = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#60A5FA', '#A78BFA', '#F472B6']
-    const color = colors[Math.floor(Math.random() * colors.length)]
-    setLocalUser({ name: user.name, color })
+    const token = localStorage.getItem('token')
+    if (!token) return
+    try {
+      const decoded = JSON.parse(atob(token.split('.')[1]))
+      const colors  = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444']
+      setLocalUser({
+        name:  decoded.name || 'Anonymous',
+        color: colors[Math.abs(decoded.userId?.charCodeAt(0) || 0) % colors.length]
+      })
+    } catch { /* token unreadable — no presence dot */ }
   }, [])
 
-  // ── Tiptap editor setup ────────────────────────────────────────────────────
+  // ── isApplyingRemote ref ──────────────────────────────────────────────────
+  // Prevents the onTransaction handler from emitting steps received from the
+  // server back to the server. Passed into both the Collaboration extension
+  // and useCollabSocket so they share the same flag.
+  const isApplyingRemote = useRef(false)
+
+  // ── Tiptap editor ─────────────────────────────────────────────────────────
   const editor = useEditor({
-    extensions: [StarterKit, LiveCursors],
+    extensions: [
+      StarterKit,
+      LiveCursors,
+      Collaboration.configure({
+        // Steps are emitted via the onSendSteps callback below.
+        // The collab plugin is registered here; the actual socket emit happens
+        // in useCollabSocket which holds the socket lifecycle.
+        onSendSteps: (steps, clientID, version) => {
+          if (!isApplyingRemote.current) {
+            socket.emit('collab-steps', {
+              documentId: id,
+              version,
+              steps,
+              clientID
+            })
+          }
+        },
+        isApplyingRemote,
+        clientID: `client-${Math.random().toString(36).slice(2)}`
+      })
+    ],
     content: '',
     editorProps: {
       attributes: {
         class: 'focus:outline-none',
-        'data-gramm': 'false',     // Disable Grammarly from intercepting the editor
+        'data-gramm': 'false',
         'data-placeholder': 'Start writing…',
       }
     },
-    // Emit a content-update whenever the local user types
-    onUpdate: ({ editor }) => {
-      if (isApplyingRemote.current) return
-      socket.emit('content-update', {
-        documentId: id,
-        content: editor.getHTML()
-      })
-    },
     // Emit cursor position on every selection change (throttled to 50 ms)
-    onSelectionUpdate: ({ editor }) => {
-      if (!localUser) return
+    onSelectionUpdate: ({ editor: ed }) => {
+      if (!localUser || !id) return
       if (cursorThrottleRef.current) return
       cursorThrottleRef.current = setTimeout(() => {
         cursorThrottleRef.current = null
       }, 50)
       socket.emit('cursor-move', {
         documentId: id,
-        position: editor.state.selection.anchor,
-        name: localUser.name,
-        color: localUser.color
+        position:   ed.state.selection.anchor,
+        name:       localUser.name,
+        color:      localUser.color
       })
     }
   })
 
-  // ── Sync remote cursor map into the LiveCursors extension ─────────────────
-  // Whenever `remoteUsers` changes, push the new map into the Tiptap plugin
-  // via a transaction so ProseMirror re-renders the cursor decorations.
+  // ── Cursor throttle ref ───────────────────────────────────────────────────
+  // Declared here so onSelectionUpdate can reference it via closure.
+  // Also exposed to useCollabSocket for cleanup.
+  const cursorThrottleRef = useRef(null)
+
+  // ── Sync remote cursor map → LiveCursors plugin ───────────────────────────
+  const { remoteUsers, connectedUsers } = usePresence(id)
+
   useEffect(() => {
     if (!editor) return
     editor.storage.liveCursors.cursors = remoteUsers
@@ -163,165 +202,37 @@ export default function Document() {
     )
   }, [editor, remoteUsers])
 
-  // ── Load document from API ─────────────────────────────────────────────────
-  // Runs once the editor is ready. Sets the title and initial content.
-  useEffect(() => {
-    const fetchDoc = async () => {
-      try {
-        const res = await axios.get(`${API}/documents/${id}`, { headers })
-        setTitle(res.data.title)
-        if (editor && res.data.content) {
-          editor.commands.setContent(res.data.content)
-        }
-      } catch (err) {
-        toast.error('Failed to load document')
-        navigate('/dashboard')
-      }
-    }
-    if (editor) fetchDoc()
-  }, [editor, id])
+  // ── Data, autosave, version history, collaboration ────────────────────────
+  const { title, setTitle } = useDocumentData(id, headers, editor)
 
-  // ── Socket.io event listeners ──────────────────────────────────────────────
-  // Runs when `localUser` is set (after mount). Connects to the server, joins
-  // the document room, and wires up all real-time event handlers.
-  useEffect(() => {
-    if (!localUser) return
+  const { saving, lastSaved, saveError, saveDocument } =
+    useAutoSave(editor, id, title, headers)
 
-    socket.connect()
-    socket.emit('join-document', { documentId: id, user: localUser })
-    socket.emit('get-presence', id) // Request the current list of connected users
+  const {
+    showHistoryPanel, setShowHistoryPanel,
+    versions, previewingVersion, loadingVersions,
+    saveSnapshot, previewVersion, exitPreview, restoreVersion
+  } = useVersionHistory(id, headers, editor, saveDocument, setTitle)
 
-    // A peer edited the document — apply the new content without triggering
-    // our own onUpdate handler (isApplyingRemote flag)
-    socket.on('content-update', ({ content }) => {
-      if (!editor) return
-      isApplyingRemote.current = true
-      editor.commands.setContent(content, false)
-      isApplyingRemote.current = false
-    })
+  useCollabSocket(id, editor, localUser, setIsConnected)
 
-    // Server responds to 'get-presence' with the list of already-connected users
-    socket.on('presence-list', (users) => {
-      setRemoteUsers(prev => {
-        const next = new Map(prev)
-        users.forEach(u => next.set(u.socketId, { ...u, showLabel: true }))
-        return next
-      })
-    })
-
-    // A new user just joined the room
-    socket.on('user-joined', (user) => {
-      setRemoteUsers(prev => {
-        const next = new Map(prev)
-        next.set(user.socketId, { ...user, showLabel: true })
-        return next
-      })
-    })
-
-    // A user left — remove their cursor decoration
-    socket.on('user-left', (socketId) => {
-      setRemoteUsers(prev => {
-        const next = new Map(prev)
-        next.delete(socketId)
-        return next
-      })
-    })
-
-    // A peer moved their cursor — update their position and show the name label.
-    // Schedule the label to fade out after 3 seconds of inactivity.
-    socket.on('cursor-move', (data) => {
-      setRemoteUsers(prev => {
-        const next = new Map(prev)
-        const existing = next.get(data.socketId) || {}
-        next.set(data.socketId, { ...existing, ...data, showLabel: true })
-        return next
-      })
-
-      // Reset the per-user inactivity timer
-      if (labelTimeoutRefs.current.has(data.socketId)) {
-        clearTimeout(labelTimeoutRefs.current.get(data.socketId))
-      }
-      const timeout = setTimeout(() => {
-        setRemoteUsers(prev => {
-          if (!prev.has(data.socketId)) return prev
-          const next = new Map(prev)
-          const user = next.get(data.socketId)
-          next.set(data.socketId, { ...user, showLabel: false })
-          return next
-        })
-      }, 3000)
-      labelTimeoutRefs.current.set(data.socketId, timeout)
-    })
-
-    // ── Connection status tracking ───────────────────────────────────────
-    socket.on('connect', () => setIsConnected(true))
-    socket.on('disconnect', () => setIsConnected(false))
-    if (socket.connected) setIsConnected(true)
-
-    return () => {
-      // Clean up all socket listeners and disconnect on unmount
-      socket.off('content-update')
-      socket.off('presence-list')
-      socket.off('user-joined')
-      socket.off('user-left')
-      socket.off('cursor-move')
-      socket.off('connect')
-      socket.off('disconnect')
-      socket.disconnect()
-
-      // Clear all pending label-hide timers
-      labelTimeoutRefs.current.forEach(clearTimeout)
-    }
-  }, [editor, id, localUser])
-
-  // ── Warn before closing tab with unsaved changes ───────────────────────
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      if (editor && !editor.isEmpty) {
-        e.preventDefault()
-      }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [editor])
-
-  // ── Auto-save every 3 seconds ──────────────────────────────────────────────
-  // Persists the current title + HTML content to the database.
-  const saveDocument = useCallback(async () => {
-    if (!editor || !title) return
-    setSaving(true)
-    try {
-      await axios.patch(`${API}/documents/${id}`, {
-        content: editor.getHTML(),
-        title
-      }, { headers })
-      setLastSaved(new Date())
-    } catch (err) {
-      // Silent failure — auto-save is best-effort; the user can manually save
-    } finally {
-      setSaving(false)
-    }
-  }, [editor, id, title])
+  // ── Word + character count ────────────────────────────────────────────────
+  // State-based to avoid useMemo([editor?.state]) anti-pattern.
+  const [wordCount, setWordCount] = useState(0)
+  const [charCount, setCharCount] = useState(0)
 
   useEffect(() => {
     if (!editor) return
-    const interval = setInterval(saveDocument, 3000)
-    return () => clearInterval(interval)
-  }, [saveDocument])
-
-  // ── Keyboard shortcut: ⌘S / Ctrl+S to save ──────────────────────────────
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        saveDocument()
-      }
+    const update = () => {
+      const text = editor.getText()
+      setWordCount(text.trim() === '' ? 0 : text.trim().split(/\s+/).length)
+      setCharCount(text.length)
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [saveDocument])
+    editor.on('update', update)
+    return () => editor.off('update', update)
+  }, [editor])
 
-  // ── Share link generation ──────────────────────────────────────────────────
+  // ── Share link helpers ────────────────────────────────────────────────────
   const generateShareLink = async () => {
     setGeneratingLink(true)
     try {
@@ -331,7 +242,7 @@ export default function Document() {
         { headers }
       )
       setShareUrl(res.data.shareUrl)
-    } catch (err) {
+    } catch {
       toast.error('Failed to generate share link')
     } finally {
       setGeneratingLink(false)
@@ -345,114 +256,18 @@ export default function Document() {
     toast.success('Link copied!')
   }
 
-  // ── Version history helpers ────────────────────────────────────────────────
-  const fetchVersions = useCallback(async () => {
-    setLoadingVersions(true)
-    try {
-      const res = await axios.get(`${API}/documents/${id}/versions`, { headers })
-      setVersions(res.data)
-    } catch (err) {
-      toast.error('Failed to load history')
-    } finally {
-      setLoadingVersions(false)
-    }
-  }, [id, headers])
-
-  // Re-fetch versions whenever the panel is opened
-  useEffect(() => {
-    if (showHistoryPanel) fetchVersions()
-  }, [showHistoryPanel, fetchVersions])
-
-  /** Save the current document state as a named snapshot */
-  const saveSnapshot = async () => {
-    try {
-      await saveDocument() // Ensure the very latest content is persisted first
-      await axios.post(`${API}/documents/${id}/snapshot`, {}, { headers })
-      toast.success('Version saved!')
-      fetchVersions()
-    } catch (err) {
-      toast.error('Failed to save version')
-    }
-  }
-
-  /** Load a version's content into the editor (read-only preview mode) */
-  const previewVersion = async (version) => {
-    try {
-      const res = await axios.get(`${API}/documents/${id}/versions/${version.id}`, { headers })
-      editor.commands.setContent(res.data.content, false)
-      setTitle(res.data.title)
-      editor.setEditable(false) // Prevent edits while previewing
-      setPreviewingVersion(res.data)
-    } catch (err) {
-      toast.error('Failed to load version preview')
-    }
-  }
-
-  /** Exit preview mode and reload the live document content */
-  const exitPreview = async () => {
-    try {
-      const res = await axios.get(`${API}/documents/${id}`, { headers })
-      editor.commands.setContent(res.data.content, false)
-      setTitle(res.data.title)
-      editor.setEditable(true)
-      setPreviewingVersion(null)
-    } catch (err) {
-      toast.error('Failed to exit preview')
-    }
-  }
-
-  /** Restore the document to the currently-previewed version */
-  const restoreVersion = async () => {
-    if (!previewingVersion) return
-    try {
-      const res = await axios.post(
-        `${API}/documents/${id}/versions/${previewingVersion.id}/restore`,
-        {},
-        { headers }
-      )
-      editor.commands.setContent(res.data.content, false)
-      setTitle(res.data.title)
-      editor.setEditable(true)
-      setPreviewingVersion(null)
-
-      // Broadcast the restored content to all connected peers
-      socket.emit('content-update', {
-        documentId: id,
-        content: res.data.content
-      })
-
-      toast.success('Version restored!')
-      fetchVersions()
-    } catch (err) {
-      toast.error('Failed to restore version')
-    }
-  }
-
-  // ── Utility formatters ─────────────────────────────────────────────────────
+  // ── Utility formatters ────────────────────────────────────────────────────
   const formatTime = (date) => {
     if (!date) return ''
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   }
 
-  const formatDateFull = (dateStr) => {
-    return new Date(dateStr).toLocaleString('en-US', {
+  const formatDateFull = (dateStr) =>
+    new Date(dateStr).toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     })
-  }
 
-  // ── Word + character count (derived from editor content) ───────────────────
-  const wordCount = useMemo(() => {
-    if (!editor) return 0
-    const text = editor.getText()
-    return text.trim() === '' ? 0 : text.trim().split(/\s+/).length
-  }, [editor?.state])
-
-  const charCount = useMemo(() => {
-    if (!editor) return 0
-    return editor.getText().length
-  }, [editor?.state])
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white dark:bg-[#111318] transition-colors duration-200">
 
@@ -471,7 +286,6 @@ export default function Document() {
             </Link>
             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
             <Link to="/dashboard" className="flex items-center gap-2">
-              <img src="/logo.svg" alt="CollabDocs" className="h-5 w-auto" />
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 hidden sm:block">CollabDocs</span>
             </Link>
           </div>
@@ -479,22 +293,22 @@ export default function Document() {
           {/* Right: save status, collaborators, actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
 
-            {/* Connection status indicator */}
+            {/* Connection indicator */}
             <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${
               isConnected
                 ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40'
                 : 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/40'
             }`}>
               {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
-              <span className="w-1.5 h-1.5 rounded-full status-pulse" style={{ color: isConnected ? '#10b981' : '#ef4444', backgroundColor: isConnected ? '#10b981' : '#ef4444' }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isConnected ? '#10b981' : '#ef4444' }} />
             </div>
 
-            {/* Auto-save status */}
+            {/* Save status */}
             <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">
               {saving ? 'Saving…' : lastSaved ? `Saved ${formatTime(lastSaved)}` : ''}
             </span>
 
-            {/* Live collaborator avatars with tooltips */}
+            {/* Live collaborator avatars */}
             {remoteUsers.size > 0 && (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1">
                 {Array.from(remoteUsers.values()).map(user => (
@@ -504,7 +318,6 @@ export default function Document() {
                     style={{ backgroundColor: user.color }}
                   >
                     {user.name.charAt(0).toUpperCase()}
-                    {/* Tooltip on hover */}
                     <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                       {user.name}
                     </div>
@@ -524,7 +337,7 @@ export default function Document() {
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
 
-            {/* Version history toggle */}
+            {/* History toggle */}
             <button
               onClick={() => setShowHistoryPanel(!showHistoryPanel)}
               className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg transition-all ${
@@ -537,7 +350,7 @@ export default function Document() {
               <span className="hidden sm:block">History</span>
             </button>
 
-            {/* Share modal trigger */}
+            {/* Share */}
             <button
               onClick={() => setShowShareModal(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
@@ -548,7 +361,7 @@ export default function Document() {
 
             {/* Manual save */}
             <button
-              onClick={saveDocument}
+              onClick={() => saveDocument().catch(() => {})}
               className="flex items-center gap-1.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition-colors"
             >
               <Save size={14} />
@@ -589,7 +402,7 @@ export default function Document() {
             <ListOrdered size={15} />
           </ToolbarBtn>
 
-          {/* Word + character count — updates reactively as the user types */}
+          {/* Word + character count */}
           <div className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 pr-1">
             <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
             <span className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
@@ -599,7 +412,6 @@ export default function Document() {
       </div>
 
       {/* ── Version preview banner ── */}
-      {/* Shown at the top of the content area when the user is previewing a past version */}
       {previewingVersion && (
         <div className={`fixed top-[92px] left-0 z-30 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2.5 transition-all duration-200 ${showHistoryPanel ? 'right-80' : 'right-0'}`}>
           <div className="max-w-[760px] mx-auto flex items-center justify-between">
@@ -631,22 +443,21 @@ export default function Document() {
       {/* ── Main layout: editor + history sidebar ── */}
       <div className="flex pt-[92px] min-h-screen">
 
-        {/* Editor area — shifts left when the history panel is open */}
         <div className={`flex-1 transition-all duration-300 ${showHistoryPanel ? 'mr-80' : ''}`}>
           <div className={`max-w-[760px] mx-auto px-6 sm:px-8 pb-32 ${previewingVersion ? 'mt-14' : ''}`}>
 
-            {/* Document title — large editable h1-style input */}
+            {/* Title input */}
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              onBlur={saveDocument} // Save on focus-out for immediate persistence
+              onBlur={() => saveDocument().catch(() => {})}
               disabled={!!previewingVersion}
               className="doc-title-input mt-10 mb-6 w-full disabled:opacity-80"
               placeholder="Untitled Document"
             />
 
-            {/* Tiptap editor — dimmed and non-interactive during version preview */}
+            {/* Editor */}
             <div className={previewingVersion ? 'opacity-80 pointer-events-none grayscale-[20%]' : ''}>
               <EditorContent editor={editor} />
             </div>
@@ -659,7 +470,6 @@ export default function Document() {
             showHistoryPanel ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
-          {/* Sidebar header */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-[#16181f]">
             <h2 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <History size={16} className="text-indigo-500" />
@@ -673,7 +483,6 @@ export default function Document() {
             </button>
           </div>
 
-          {/* Save snapshot button */}
           <div className="p-4 bg-white dark:bg-[#16181f] border-b border-gray-100 dark:border-gray-800">
             <button
               onClick={saveSnapshot}
@@ -684,7 +493,6 @@ export default function Document() {
             </button>
           </div>
 
-          {/* Version list */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {loadingVersions ? (
               <p className="text-xs text-center text-gray-500 dark:text-gray-400 py-4">Loading history…</p>
@@ -692,7 +500,7 @@ export default function Document() {
               <div className="text-center py-8 px-4">
                 <Clock size={24} className="mx-auto text-gray-300 dark:text-gray-600 mb-2" />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  No versions saved yet. Click the button above to create a snapshot of your document.
+                  No versions saved yet. Click the button above to create a snapshot.
                 </p>
               </div>
             ) : (
@@ -741,8 +549,6 @@ export default function Document() {
           onClick={(e) => { if (e.target === e.currentTarget) { setShowShareModal(false); setShareUrl('') } }}
         >
           <div className="bg-white dark:bg-[#1e2432] rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-gray-700 animate-fade-in-up">
-
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-5 border-b border-gray-100 dark:border-gray-800">
               <div>
                 <h3 className="text-base font-semibold text-gray-900 dark:text-white">Share document</h3>
@@ -757,8 +563,6 @@ export default function Document() {
             </div>
 
             <div className="px-6 py-5 space-y-5">
-
-              {/* Permission level selector */}
               <div>
                 <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-3">Access level</p>
                 <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl gap-1">
@@ -783,7 +587,6 @@ export default function Document() {
                 </p>
               </div>
 
-              {/* Generate button / link display */}
               {!shareUrl ? (
                 <button
                   onClick={generateShareLink}
@@ -816,6 +619,12 @@ export default function Document() {
           </div>
         </div>
       )}
+
+      {/* ── Save error banner ── */}
+      <SaveErrorBanner
+        error={saveError}
+        onRetry={() => saveDocument().catch(() => {})}
+      />
     </div>
   )
 }

@@ -18,6 +18,7 @@ import axios from 'axios'
 import toast from 'react-hot-toast'
 import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search, ArrowUpDown } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
+import { useAuthHeaders } from '../hooks/useAuthHeaders.js'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
@@ -110,10 +111,8 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
 
-  // ── Auth data from localStorage ────────────────────────────────────────────
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
-  const token = localStorage.getItem('token')
-  const headers = { Authorization: `Bearer ${token}` }
+  // ── Auth headers ───────────────────────────────────────────────────────────
+  const headers = useAuthHeaders()
 
   // ── Fetch documents on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -152,13 +151,16 @@ export default function Dashboard() {
   }, [documents.length, loading])
 
   // ── API: load document list ────────────────────────────────────────────────
+  // Pass limit=500 so users with more than 20 documents (the server default)
+  // see all of them. The server caps at 500. A proper paginated UI can be
+  // added as a future enhancement.
   const fetchDocuments = async () => {
     try {
-      const res = await axios.get(`${API}/documents`, { headers })
-      // Handle both paginated ({ documents, totalCount }) and legacy (array) responses
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      const res = await axios.get(`${API}/documents?limit=500`, { headers })
       const docs = Array.isArray(res.data) ? res.data : res.data?.documents
       setDocuments(docs || [])
-    } catch (err) {
+    } catch {
       toast.error('Failed to load documents')
     } finally {
       setLoading(false)

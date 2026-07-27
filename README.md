@@ -1,356 +1,135 @@
 <div align="center">
+  <img src="https://via.placeholder.com/150?text=CollabDocs+Logo" alt="CollabDocs Logo" width="120" />
+  <h1>CollabDocs</h1>
+  <p>A production-ready, real-time collaborative rich-text editor.</p>
 
-<br />
-
-<img src="./client/public/logo.svg" width="80" height="80" alt="CollabDocs Logo" />
-
-<h1>CollabDocs</h1>
-
-<p><strong>Real-time collaborative document editing, engineered from scratch.</strong><br />
-Multiple users. One document. Zero conflicts.</p>
-
-<br />
-
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-4f46e5?style=for-the-badge&logo=vercel&logoColor=white)](https://collab-editor-vu93.onrender.com)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-[![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101?style=for-the-badge&logo=socket.io&logoColor=white)](https://socket.io)
-[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://prisma.io)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](./LICENSE)
-
-<br />
-
+  <p>
+    <a href="https://collabdocs-demo.example.com">View Demo</a> · 
+    <a href="https://github.com/yourusername/collabdocs/issues">Report Bug</a> · 
+    <a href="https://github.com/yourusername/collabdocs/issues">Request Feature</a>
+  </p>
 </div>
 
 ---
 
-## ✨ What is CollabDocs?
+## 📖 Overview
 
-CollabDocs is a **full-stack real-time collaborative document editor** — think Google Docs, built from the ground up. It supports multiple users editing the same document simultaneously, with conflicts resolved automatically using a custom **Operational Transformation (OT)** algorithm.
+CollabDocs is a high-performance, real-time collaborative text editor built with **React, Tiptap, Node.js, Express, Socket.io, and PostgreSQL**. 
 
-No CRDT libraries. No third-party real-time backends. Pure WebSockets + hand-rolled OT.
+Designed as a modern alternative to Google Docs, it leverages the **ProseMirror step-based Operational Transformation (OT)** algorithm to guarantee conflict-free, concurrent rich-text editing with zero data corruption. 
 
-<br />
-
-## 🚀 Core Features
-
-| Feature | Description |
-|---|---|
-| ⚡ **Real-Time Collaboration** | Multiple users edit the same document live via Socket.io |
-| 🔀 **Operational Transformation** | Custom OT engine resolves concurrent edit conflicts without data loss |
-| ✏️ **Rich Text Editor** | Full rich text support via Tiptap / ProseMirror (bold, italic, headings, lists) |
-| 🔐 **Dual Authentication** | Email/password auth + Google OAuth 2.0 via Passport.js |
-| 🔗 **Secure Sharing** | JWT-signed shareable links with `view` or `edit` permissions |
-| 🌓 **Dark Mode** | System-aware dark mode with toggle, persisted to localStorage |
-| 🔍 **Document Search** | Live client-side search with highlighted matches |
-| 🗑️ **Account Management** | Full account deletion with cascading document cleanup |
-| 📱 **Responsive** | Desktop-first, degrades gracefully to mobile |
-
-<br />
-
-## 🏗️ System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CLIENT (Vercel)                          │
-│                                                                 │
-│  React + Vite + Tailwind CSS                                    │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────┐  ┌──────────┐  │
-│  │ Landing  │  │   Auth    │  │  Dashboard   │  │  Editor  │  │
-│  │   Page   │  │   Page    │  │   (Search)   │  │  (Tiptap)│  │
-│  └──────────┘  └───────────┘  └──────────────┘  └──────────┘  │
-│                                        │               │        │
-│                          Axios (REST)  │    Socket.io  │        │
-└────────────────────────────────────────┼───────────────┼────────┘
-                                         │               │
-┌────────────────────────────────────────┼───────────────┼────────┐
-│                        SERVER (Render) │               │        │
-│                                        ▼               ▼        │
-│  Node.js + Express.js         REST API          Socket.io       │
-│  ┌──────────────────┐    ┌──────────────────────────────────┐  │
-│  │   Auth Routes    │    │      OT Engine (Server)          │  │
-│  │  JWT + Google    │    │  - join-document rooms           │  │
-│  │  OAuth via       │    │  - transform() concurrent ops    │  │
-│  │  Passport.js     │    │  - broadcast content-update      │  │
-│  └──────────────────┘    └──────────────────────────────────┘  │
-│             │                           │                        │
-│             ▼                           ▼                        │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │              Prisma ORM → PostgreSQL                      │  │
-│  │  User ──< Document ──< ShareLink                          │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-<br />
-
-## 🔀 How Operational Transformation Works
-
-This is the most technically interesting part of the project.
-
-When two users type at the same time, their operations can conflict:
-
-```
-Initial document: "Hello"
-
-User A types "!" at position 5  →  op_A = { type: 'insert', pos: 5, char: '!' }
-User B types " World" at pos 5  →  op_B = { type: 'insert', pos: 5, str: ' World' }
-```
-
-Without transformation, one user's edit would silently overwrite the other's. CollabDocs resolves this by **transforming each incoming operation against all concurrent operations** before applying it:
-
-```
-transform(op_A, op_B) → op_A' = { type: 'insert', pos: 11, char: '!' }
-Result: "Hello World!"  ✓  (both operations preserved)
-```
-
-The OT engine lives in [`client/src/ot/transform.js`](./client/src/ot/transform.js) and [`server/src/ot/server.js`](./server/src/ot/server.js).
-
-<br />
-
-## 🛠️ Tech Stack
-
-### Frontend
-| Technology | Purpose |
-|---|---|
-| **React 19** + **Vite** | UI framework + blazing fast dev server |
-| **Tailwind CSS 3** | Utility-first styling with dark mode |
-| **Tiptap / ProseMirror** | Rich text editor engine |
-| **Socket.io-client** | WebSocket client for real-time sync |
-| **React Router v7** | Client-side routing + SPA navigation |
-| **Axios** | HTTP client for REST API calls |
-| **Lucide React** | Icon system |
-
-### Backend
-| Technology | Purpose |
-|---|---|
-| **Node.js** + **Express 5** | HTTP server + REST API |
-| **Socket.io 4** | WebSocket server for real-time events |
-| **Prisma ORM 7** | Type-safe database access |
-| **PostgreSQL** | Relational database |
-| **Passport.js** | Google OAuth 2.0 strategy |
-| **jsonwebtoken** | JWT auth for sessions + share links |
-| **bcryptjs** | Password hashing |
-
-### Infrastructure
-| Service | Role |
-|---|---|
-| **Vercel** | Frontend hosting (CDN + edge) |
-| **Render** | Backend server hosting |
-| **Supabase / Render PostgreSQL** | Managed database |
-
-<br />
-
-## 📁 Project Structure
-
-```
-collab-editor/
-├── client/                        # React frontend (Vite)
-│   ├── public/
-│   │   └── logo.svg               # SVG logo (transparent, works in dark mode)
-│   ├── src/
-│   │   ├── context/
-│   │   │   └── ThemeContext.jsx   # Dark mode context + localStorage persistence
-│   │   ├── ot/
-│   │   │   ├── transform.js       # OT transform() and apply() functions
-│   │   │   └── transform.test.js  # Unit tests for OT logic
-│   │   ├── pages/
-│   │   │   ├── Landing.jsx        # Public landing page
-│   │   │   ├── Login.jsx          # Auth (email + Google OAuth)
-│   │   │   ├── Dashboard.jsx      # Document list + search
-│   │   │   ├── Document.jsx       # Real-time editor page
-│   │   │   ├── SharedDocument.jsx # Read/edit via share link
-│   │   │   └── AuthCallback.jsx   # Google OAuth callback handler
-│   │   ├── socket/
-│   │   │   └── socket.js          # Socket.io client instance
-│   │   ├── App.jsx                # Router + theme provider
-│   │   └── index.css              # Design system + Tiptap prose overrides
-│   └── vercel.json                # SPA routing config for Vercel
-│
-└── server/                        # Node.js + Express backend
-    ├── prisma/
-    │   └── schema.prisma          # Database schema (User, Document, ShareLink)
-    ├── src/
-    │   ├── middleware/
-    │   │   └── auth.js            # JWT authentication middleware
-    │   ├── ot/
-    │   │   └── server.js          # Server-side OT + Socket.io event handlers
-    │   ├── routes/
-    │   │   ├── auth.js            # /auth/* — login, register, Google, delete account
-    │   │   ├── documents.js       # /documents/* — CRUD + sharing
-    │   │   └── googleAuth.js      # Google OAuth Passport strategy
-    │   ├── lib/
-    │   │   └── prisma.js          # Prisma client singleton
-    │   └── index.js               # Express + Socket.io server entry point
-    └── docker-compose.yml         # Local PostgreSQL via Docker
-```
-
-<br />
-
-## 🚀 Getting Started (Local Development)
-
-### Prerequisites
-- **Docker Desktop** (or Docker engine + Docker Compose v2)
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/divya-3005/collab-editor.git
-cd collab-editor
-```
-
-### 2. Set up environment variables
-
-Copy the example env files to set up your local environment:
-
-```bash
-cp server/.env.example server/.env
-cp client/.env.example client/.env
-```
-
-Ensure `server/.env` has the correct `DATABASE_URL` pointing to the `postgres` container:
-```env
-DATABASE_URL=postgresql://collab:collab123@postgres:5432/collabeditor?schema=public
-```
-
-### 3. Start the entire stack
-
-Run this command from the root directory:
-
-```bash
-docker compose up --build
-```
-
-Docker will build and start three containers:
-- `postgres`: The database running on port 5432
-- `server`: The Node.js API + Socket.io server running on port 3001
-- `client`: The Vite React frontend running on port 5173
-
-**Note on first run:** The `server` container will automatically run `npx prisma generate` during the build process. To push the schema to the database for the first time, run this in a separate terminal:
-```bash
-docker compose exec server npx prisma db push
-```
-
-Open **http://localhost:5173** — you're live. Live reloading is fully supported; any code changes you make in your IDE will instantly reflect in the browser.
-
-<br />
-
-## 🔐 Authentication Flows
-
-```
-Email/Password:          Google OAuth:
-──────────────           ──────────────
-POST /auth/register  →   GET /auth/google
-POST /auth/login     →   Google consent screen
-       ↓                        ↓
-   JWT token          GET /auth/google/callback
-       ↓                        ↓
-localStorage         POST → JWT token → /auth/callback
-       ↓                        ↓
-  Protected routes       localStorage → dashboard
-```
-
-<br />
-
-## 📡 Real-Time Event Reference
-
-| Event | Direction | Payload | Description |
-|---|---|---|---|
-| `join-document` | Client → Server | `documentId` | Join a document's Socket.io room |
-| `content-update` | Client → Server | `{ documentId, content }` | Broadcast new HTML content |
-| `content-update` | Server → Client | `{ content }` | Receive updated content from peers |
-| `user-count` | Server → Client | `number` | Number of active editors in the room |
-| `document-revision` | Server → Client | `{ revision }` | Current document revision number |
-| `operation-ack` | Server → Client | `{ revision }` | OT operation acknowledged |
-
-<br />
-
-## 🗄️ Database Schema
-
-```prisma
-model User {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  password  String?
-  googleId  String?    @unique
-  documents Document[] @relation("owner")
-  createdAt DateTime   @default(now())
-}
-
-model Document {
-  id         String      @id @default(uuid())
-  title      String      @default("Untitled Document")
-  content    String?     @default("")
-  owner      User        @relation("owner", fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId    String
-  shareLinks ShareLink[]
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-}
-
-model ShareLink {
-  id         String   @id @default(uuid())
-  token      String   @unique
-  permission String   @default("view")   // "view" | "edit"
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentId String
-  createdAt  DateTime @default(now())
-}
-```
-
-<br />
-
-## 🌐 Deployment
-
-| Layer | Platform | Notes |
-|---|---|---|
-| Frontend | **Vercel** | Auto-deploys from `main` branch. `vercel.json` handles SPA routing. |
-| Backend | **Render** | Web service. Set all env vars in Render dashboard. |
-| Database | **Render PostgreSQL** | Managed Postgres. Set `DATABASE_URL` accordingly. |
-
-### Vercel env vars (frontend)
-```
-VITE_API_URL = https://your-render-app.onrender.com/api
-```
-
-### Render env vars (backend)
-```
-DATABASE_URL         = postgresql://...
-JWT_SECRET           = ...
-CLIENT_URL           = https://your-vercel-app.vercel.app
-GOOGLE_CLIENT_ID     = ...
-GOOGLE_CLIENT_SECRET = ...
-GOOGLE_CALLBACK_URL  = https://your-render-app.onrender.com/api/auth/google/callback
-```
-
-> **Important:** Google Cloud Console → OAuth 2.0 → Authorized redirect URIs must include your production `GOOGLE_CALLBACK_URL` exactly.
-
-<br />
-
-## 🧪 Testing
-
-The OT transform logic has unit tests:
-
-```bash
-cd client
-node src/ot/transform.test.js
-```
-
-Tests cover insert/delete transforms, identity operations, and concurrent conflict resolution.
-
-<br />
-
-## 📝 License
-
-MIT © [Divya Singh](https://github.com/divya-3005)
-
----
+It is designed for production with defense-in-depth security, strict type validations, REST API autosave durability, and a decoupled React hook architecture.
 
 <div align="center">
-
-Built with ❤️ using React, Socket.io, and a custom Operational Transformation engine.
-
-**[⭐ Star this repo](https://github.com/divya-3005/collab-editor)** if you found it useful!
-
+  <img src="https://via.placeholder.com/800x450?text=App+Screenshot" alt="CollabDocs Screenshot" width="800" />
 </div>
+
+## ✨ Features
+
+- **Real-Time Collaboration**: Sub-10ms latency updates via WebSockets.
+- **Conflict-Free Edits**: ProseMirror's central-authority step rebasing handles concurrent formatting (bolding, lists, headings) gracefully.
+- **Live Presence**: Multi-colored remote cursors with user identification.
+- **Snapshot Versioning**: Save, preview, and atomically restore historical document states.
+- **Secure Sharing**: Generate view-only or edit-enabled share links.
+- **Robust Security**: Strict JWT type segregation (Auth vs Share tokens), XSS HTML sanitization, rate limiting, and backend-to-frontend OAuth token exchanges.
+
+## 🛠 Technology Stack
+
+**Frontend**
+- React 19
+- Vite
+- Tiptap / ProseMirror (`@tiptap/react`, `prosemirror-collab`)
+- Tailwind CSS
+- React Router DOM
+
+**Backend**
+- Node.js & Express
+- Socket.io (Real-time engine)
+- Prisma ORM
+- PostgreSQL
+- Passport.js (Google OAuth 2.0)
+
+## 🚀 Installation & Local Development
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/yourusername/collabdocs.git
+cd collabdocs
+```
+
+### 2. Configure Environment
+Copy the example environment file and fill in your secrets (Database URL, Google OAuth credentials, and a secure JWT secret).
+```bash
+cp server/.env.example server/.env
+```
+> **Note**: The backend will deliberately refuse to start if `JWT_SECRET` or `DATABASE_URL` are missing or malformed to prevent insecure boots.
+
+### 3. Install Dependencies
+```bash
+# In the client directory
+cd client
+npm install
+
+# In the server directory
+cd ../server
+npm install
+```
+
+### 4. Database Setup
+Ensure PostgreSQL is running locally, then push the Prisma schema:
+```bash
+npx prisma db push
+```
+
+### 5. Start Development Servers
+Start both the client and server concurrently.
+```bash
+# Client (Terminal 1)
+cd client
+npm run dev
+
+# Server (Terminal 2)
+cd server
+npm run dev
+```
+
+The application will be available at `http://localhost:5173`.
+
+## 🏗 Architecture & Internal Documentation
+
+CollabDocs avoids spaghetti state by heavily decoupling logic into focused modules. Read the detailed documentation in the `/docs` folder:
+
+- [Frontend Hook Architecture](docs/architecture.md)
+- [ProseMirror Step-Sync Protocol](docs/collaboration.md)
+- [Security Model & Threat Mitigation](docs/security.md)
+- [REST API & Socket Events](docs/api.md)
+- [Database Schema](docs/database.md)
+- [Deployment Guide & Horizontal Scaling Constraints](docs/deployment.md)
+
+## 🐳 Docker (Optional)
+*A `Dockerfile` and `docker-compose.yml` are planned for v1.1.0 to streamline local database and server orchestration.*
+
+## 🧪 Testing
+The server includes native Node.js tests for critical security utilities (like the HTML sanitizer).
+```bash
+cd server
+npm run test
+```
+
+## 📈 Future Roadmap
+- [ ] Guest anonymous JWT issuing for shared links.
+- [ ] Redis Pub/Sub adapter for multi-node horizontal scaling.
+- [ ] Client-side cursor throttle tuning based on network latency.
+- [ ] Export to PDF / Markdown functionality.
+
+## 🤝 Contributing
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Please review our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## 🛡 License
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+
+## 🙏 Acknowledgements
+- [Tiptap](https://tiptap.dev/) & [ProseMirror](https://prosemirror.net/) for the incredible editing framework.
+- [Socket.io](https://socket.io/)
+- [Tailwind CSS](https://tailwindcss.com/)

@@ -20,12 +20,10 @@ model Document {
   id         String    @id @default(uuid())
   title      String    @default("Untitled Document")
   content    String    @default("")
-  revision   Int       @default(0)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   ownerId    String
   owner      User      @relation("owner", fields: [ownerId], references: [id], onDelete: Cascade)
-  operations Operation[]
   shares     DocumentShare[]
   versions   DocumentVersion[]
 }
@@ -43,16 +41,7 @@ model DocumentVersion {
   @@unique([documentId, versionNumber])
 }
 
-model Operation {
-  id         String   @id @default(uuid())
-  type       String
-  position   Int
-  character  String?
-  revision   Int
-  createdAt  DateTime @default(now())
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-}
+
 
 model DocumentShare {
   id         String   @id @default(uuid())

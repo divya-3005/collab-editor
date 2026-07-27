@@ -48,11 +48,12 @@ router.post('/register', async (req, res) => {
       data: { email, password: hashed, name }
     });
 
-    // Sign a JWT so the client is immediately authenticated after registration
+    // Sign a JWT so the client is immediately authenticated after registration.
+    // type: 'auth' differentiates this token from share tokens (type: 'share').
     const token = jwt.sign(
-      { userId: user.id },
+      { userId: user.id, type: 'auth' },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' } // 7-day session — long enough to be practical, short enough to be safe
+      { expiresIn: '7d' }
     );
 
     res.status(201).json({
@@ -90,7 +91,7 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user.id },
+      { userId: user.id, type: 'auth' },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );

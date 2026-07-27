@@ -1,17 +1,37 @@
 {
-  "name": "server",
+  "name": "collabdocs-server",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Real-time collaborative text editor backend powered by Express, Socket.io, and ProseMirror step-based OT.",
+  "main": "src/index.js",
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
+    "build": "echo \"No build step required for Node.js backend\"",
     "start": "node src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test src/**/*.test.js",
+    "lint": "eslint .",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "collaboration",
+    "real-time",
+    "editor",
+    "prosemirror",
+    "socket.io",
+    "nodejs",
+    "express"
+  ],
+  "author": "CollabDocs Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/collabdocs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/collabdocs/issues"
+  },
+  "homepage": "https://github.com/yourusername/collabdocs#readme",
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -26,8 +46,7 @@
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.21.0",
     "prisma": "^7.8.0",
-    "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1"
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

@@ -4,10 +4,14 @@ import jwt from 'jsonwebtoken';
  * Express middleware: JWT Bearer token authentication.
  *
  * Reads the `Authorization: Bearer <token>` header, verifies the token using
- * the server's JWT_SECRET, and attaches the decoded `userId` to `req` so that
- * downstream route handlers know which user is making the request.
+ * the server's JWT_SECRET, and attaches the decoded `userId` to `req`.
  *
- * Returns 401 if the header is missing, malformed, or the token is invalid/expired.
+ * Security: also asserts that `decoded.type === 'auth'` to prevent share tokens
+ * (which carry { documentId, permission, type: 'share' }) from being accepted
+ * as authentication credentials on API routes.
+ *
+ * Returns 401 if the header is missing, malformed, expired, or the token is
+ * not an auth token.
  *
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
@@ -25,7 +29,14 @@ export const authenticate = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.userId; // Attach userId so routes don't need to re-decode
+
+    // Type guard: only accept tokens that were explicitly issued as auth tokens.
+    // Share tokens (type: 'share') must not pass this middleware.
+    if (decoded.type !== 'auth') {
+      return res.status(401).json({ error: 'Invalid token type' });
+    }
+
+    req.userId = decoded.userId;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
