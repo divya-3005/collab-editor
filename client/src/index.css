@@ -1,21 +1,9 @@
 /* ============================================================
    CollabDocs — Global Styles
-   ============================================================
-   Table of contents:
-   1. Font import
-   2. Design tokens
-   3. Base styles
-   4. Tiptap / ProseMirror — light mode
-   5. Tiptap / ProseMirror — dark mode
-   6. Document title input
-   7. Scrollbar
-   8. Selection
-   9. Animations & keyframes
-   10. Live cursors
    ============================================================ */
 
 /* 1. FONT IMPORT ------------------------------------------- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -24,17 +12,10 @@
 /* 2. DESIGN TOKENS ----------------------------------------- */
 :root {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-
-  /* Brand colours */
-  --color-accent:       #4f46e5;
-  --color-accent-hover: #4338ca;
-  --color-accent-light: #eef2ff;
-
-  /* Border radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  
+  /* Brand Accent */
+  --brand: #2563eb; /* blue-600 */
 }
 
 /* 3. BASE STYLES -------------------------------------------- */
@@ -51,253 +32,216 @@
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-[#111318] dark:text-gray-100;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    @apply bg-white text-zinc-900 dark:bg-[#0e0e11] dark:text-zinc-100;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.2);
+  }
+  .dark ::selection {
+    background: rgba(96, 165, 250, 0.3);
   }
 }
 
 /* 4. TIPTAP EDITOR PROSE — LIGHT MODE --------------------- */
 .ProseMirror {
   outline: none;
-  min-height: calc(100vh - 220px);
+  min-height: calc(100vh - 300px);
   font-family: var(--font-sans);
   font-size: 1.0625rem;
-  line-height: 1.8;
-  color: #1a1a2e;
+  line-height: 1.65;
+  color: #27272a; /* zinc-800 */
 }
 
 .ProseMirror p {
-  margin-bottom: 0.875em;
+  margin-bottom: 1em;
 }
 
 .ProseMirror h1 {
-  font-size: 2rem;
+  font-size: 2.25rem;
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.025em;
-  margin-bottom: 0.5em;
-  margin-top: 1.5em;
-  color: #0f172a;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-top: 1.75em;
+  margin-bottom: 0.75em;
+  color: #09090b; /* zinc-950 */
 }
 
 .ProseMirror h2 {
-  font-size: 1.375rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
   letter-spacing: -0.015em;
-  margin-bottom: 0.5em;
-  margin-top: 1.25em;
-  color: #1e293b;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  color: #18181b; /* zinc-900 */
 }
 
 .ProseMirror h3 {
   font-size: 1.125rem;
   font-weight: 600;
   line-height: 1.4;
-  margin-bottom: 0.4em;
-  margin-top: 1em;
-  color: #334155;
+  letter-spacing: -0.01em;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  color: #27272a; /* zinc-800 */
 }
 
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.5em;
-  margin-bottom: 0.875em;
+  margin-bottom: 1em;
 }
 
 .ProseMirror li {
-  margin-bottom: 0.3em;
+  margin-bottom: 0.375em;
 }
 
 .ProseMirror blockquote {
-  border-left: 3px solid #e2e8f0;
-  padding-left: 1.25em;
-  color: #64748b;
-  font-style: italic;
-  margin: 1em 0;
+  border-left: 2px solid #e4e4e7; /* zinc-200 */
+  padding-left: 1rem;
+  color: #52525b; /* zinc-500 */
+  margin: 1.25em 0;
 }
 
 .ProseMirror code {
-  background: #f1f5f9;
-  color: #e11d48;
+  background: #f4f4f5; /* zinc-100 */
+  color: #18181b;
   border-radius: 4px;
-  padding: 0.15em 0.4em;
-  font-size: 0.9em;
-  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  padding: 0.2em 0.4em;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
 }
 
 .ProseMirror pre {
-  background: #0f172a;
-  color: #e2e8f0;
-  border-radius: var(--radius-md);
-  padding: 1.25em 1.5em;
+  background: #09090b; /* zinc-950 */
+  color: #f4f4f5;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
   overflow-x: auto;
-  margin: 1.25em 0;
+  margin: 1.5em 0;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.ProseMirror pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
 }
 
 .ProseMirror strong {
   font-weight: 600;
-  color: #0f172a;
+  color: #09090b;
 }
 
 .ProseMirror a {
-  color: var(--color-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.ProseMirror a:hover {
+  border-bottom-color: var(--brand);
 }
 
-/* Placeholder shown when the editor is empty and unfocused */
-.ProseMirror:not(.ProseMirror-focused) p:first-child:only-child:empty::before,
-.ProseMirror p.is-editor-empty:first-child::before {
+/* Placeholder */
+.ProseMirror p.is-editor-empty:first-child::before,
+.ProseMirror[data-placeholder]:empty::before {
   content: attr(data-placeholder);
   float: left;
-  color: #94a3b8;
+  color: #a1a1aa; /* zinc-400 */
   pointer-events: none;
   height: 0;
 }
 
-.ProseMirror[data-placeholder]:empty::before {
-  content: attr(data-placeholder);
-  color: #94a3b8;
-  pointer-events: none;
-}
-
 /* 5. TIPTAP EDITOR PROSE — DARK MODE ---------------------- */
-.dark .ProseMirror { color: #e2e8f0; }
-.dark .ProseMirror h1 { color: #f8fafc; }
-.dark .ProseMirror h2 { color: #f1f5f9; }
-.dark .ProseMirror h3 { color: #e2e8f0; }
-.dark .ProseMirror strong { color: #f1f5f9; }
+.dark .ProseMirror { color: #d4d4d8; /* zinc-300 */ }
+.dark .ProseMirror h1, 
+.dark .ProseMirror h2 { color: #fafafa; /* zinc-50 */ }
+.dark .ProseMirror h3,
+.dark .ProseMirror strong { color: #f4f4f5; /* zinc-100 */ }
 
 .dark .ProseMirror blockquote {
-  border-left-color: #334155;
-  color: #94a3b8;
+  border-left-color: #27272a; /* zinc-800 */
+  color: #a1a1aa; /* zinc-400 */
 }
 
 .dark .ProseMirror code {
-  background: #1e293b;
-  color: #fb7185;
+  background: #27272a;
+  color: #f4f4f5;
 }
 
-.dark .ProseMirror pre { background: #0d1117; }
+.dark .ProseMirror pre { 
+  background: #000000;
+  border: 1px solid #27272a;
+}
 
-.dark .ProseMirror a { color: #818cf8; }
+.dark .ProseMirror a { color: #60a5fa; } /* blue-400 */
+.dark .ProseMirror a:hover { border-bottom-color: #60a5fa; }
 
-.dark .ProseMirror p.is-editor-empty:first-child::before { color: #475569; }
+.dark .ProseMirror p.is-editor-empty:first-child::before,
+.dark .ProseMirror[data-placeholder]:empty::before { color: #52525b; /* zinc-500 */ }
 
 /* 6. DOCUMENT TITLE INPUT ---------------------------------- */
 .doc-title-input {
   font-size: 2.25rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   line-height: 1.2;
   border: none;
   outline: none;
   background: transparent;
   width: 100%;
-  color: #0f172a;
+  color: #09090b;
   font-family: var(--font-sans);
   padding: 0;
 }
 
-.dark .doc-title-input         { color: #f8fafc; }
-      .doc-title-input::placeholder { color: #94a3b8; }
-.dark .doc-title-input::placeholder { color: #475569; }
+.dark .doc-title-input         { color: #fafafa; }
+      .doc-title-input::placeholder { color: #a1a1aa; }
+.dark .doc-title-input::placeholder { color: #52525b; }
 
-/* 7. SCROLLBAR --------------------------------------------- */
-::-webkit-scrollbar          { width: 6px; height: 6px; }
+/* 7. SCROLLBAR (Minimal) ----------------------------------- */
+::-webkit-scrollbar          { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: #cbd5e1; border-radius: 99px; }
-.dark ::-webkit-scrollbar-thumb { background: #334155; }
+::-webkit-scrollbar-thumb    { background: #e4e4e7; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #27272a; }
 
-/* 8. SELECTION --------------------------------------------- */
-::selection      { background: rgba(79,  70, 229, 0.15); }
-.dark ::selection { background: rgba(129, 140, 248, 0.25); }
-
-/* 9. ANIMATIONS & KEYFRAMES -------------------------------- */
-
-/* Pulsing dot — used for "live" indicators */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+/* 8. ANIMATIONS (Fast & Intentional) ----------------------- */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.presence-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out forwards;
 }
 
-/* Fade + slide up — used for modals and toasts */
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in-up {
-  animation: fade-in-up 0.3s ease-out forwards;
+.animate-slide-up {
+  animation: slide-up-fade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Floating gradient orb — used in the Landing hero */
-@keyframes orb-float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33%       { transform: translate(30px, -20px) scale(1.05); }
-  66%       { transform: translate(-20px, 15px) scale(0.97); }
-}
-.animate-orb-float {
-  animation: orb-float 12s ease-in-out infinite;
-}
-
-/* Staggered list rows — each row fades in with a short delay */
-@keyframes row-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-/* Apply via inline style: animation: row-in 0.25s ease-out <delay>s both */
-
-/* Shimmer loading skeleton */
+/* Skeleton Loading (Subtle) */
 @keyframes shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position:  400px 0; }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 .animate-shimmer {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  background: linear-gradient(90deg, #f4f4f5 25%, #e4e4e7 50%, #f4f4f5 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
 }
 .dark .animate-shimmer {
-  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
-  background-size: 800px 100%;
+  background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+  background-size: 200% 100%;
 }
 
-/* Typing cursor blink — used in the Landing hero headline */
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
-}
-.animate-cursor-blink {
-  animation: cursor-blink 0.8s step-end infinite;
-}
-
-/* Scroll-triggered reveal — sections fade in and slide up on scroll */
-@keyframes reveal-up {
-  from { opacity: 0; transform: translateY(32px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.scroll-reveal {
-  opacity: 0;
-}
-.scroll-reveal.revealed {
-  animation: reveal-up 0.6s ease-out forwards;
-}
-
-/* Connection status indicator pulse */
-@keyframes status-pulse {
-  0%        { box-shadow: 0 0 0 0 currentColor; }
-  70%       { box-shadow: 0 0 0 6px transparent; }
-  100%      { box-shadow: 0 0 0 0 transparent; }
-}
-.status-pulse {
-  animation: status-pulse 2s ease-in-out infinite;
-}
-
-/* 10. LIVE CURSORS ----------------------------------------- */
+/* 9. LIVE CURSORS ----------------------------------------- */
 .collaboration-cursor__caret {
   border-left: 2px solid;
   border-right: 2px solid transparent;
@@ -308,21 +252,23 @@
   pointer-events: none;
 }
 
+/* Redesigned minimal cursor flag */
 .collaboration-cursor__label {
   position: absolute;
-  top: -1.5em;
-  left: -2px;
-  font-size: 11px;
-  font-weight: 600;
+  top: -1.3em;
+  left: -1px;
+  font-size: 10px;
+  font-weight: 500;
   color: #fff;
   white-space: nowrap;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
   border-bottom-left-radius: 0;
   pointer-events: none;
-  z-index: 50;
+  z-index: 40;
   opacity: 1;
-  transition: opacity 0.5s ease;
+  /* Fade out after a few seconds by default unless interacted with */
+  transition: opacity 0.3s ease;
 }
 
 .collaboration-cursor__label--hidden {

@@ -1,45 +1,21 @@
-/**
- * Dashboard.jsx — Authenticated user's document workspace.
- *
- * Features:
- *   - Fixed top navigation with user avatar menu
- *   - Contextual greeting based on time of day
- *   - Full-text document search with highlighted matches
- *   - Document list with staggered fade-in animation
- *   - Skeleton loading state
- *   - Delete with confirmation
- *   - Account management (sign out, delete account)
- */
-
-// ── Imports ───────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search, ArrowUpDown } from 'lucide-react'
+import { Plus, LogOut, FileText, Trash2, Moon, Sun, ChevronRight, Search, ArrowUpDown, MoreVertical } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { useAuthHeaders } from '../hooks/useAuthHeaders.js'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
-// ── Helper: time-of-day greeting ──────────────────────────────────────────────
-/**
- * Returns a greeting string based on the current hour.
- * @param {string} name - The user's display name
- */
 function getGreeting(name) {
   const hour = new Date().getHours()
   const firstName = (name || 'there').split(' ')[0]
-  if (hour < 12) return `Good morning, ${firstName} ☀️`
-  if (hour < 18) return `Good afternoon, ${firstName} 👋`
-  return `Good evening, ${firstName} 🌙`
+  if (hour < 12) return `Good morning, ${firstName}`
+  if (hour < 18) return `Good afternoon, ${firstName}`
+  return `Good evening, ${firstName}`
 }
 
-// ── Helper: highlight search query in text ────────────────────────────────────
-/**
- * Wraps the matching substring in a <mark> element so it appears highlighted.
- * Returns the original string as-is when there is no match.
- */
 function highlightMatch(text, query) {
   if (!query) return text
   const idx = text.toLowerCase().indexOf(query.toLowerCase())
@@ -47,7 +23,7 @@ function highlightMatch(text, query) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded px-0.5 not-italic">
+      <mark className="bg-brand/20 text-brand rounded px-0.5 not-italic">
         {text.slice(idx, idx + query.length)}
       </mark>
       {text.slice(idx + query.length)}
@@ -55,10 +31,6 @@ function highlightMatch(text, query) {
   )
 }
 
-// ── Helper: user avatar with initials ─────────────────────────────────────────
-/**
- * Renders a circular avatar with up to two initials derived from the user's name.
- */
 function UserAvatar({ name }) {
   const initials = (name || 'U')
     .split(' ')
@@ -67,17 +39,12 @@ function UserAvatar({ name }) {
     .slice(0, 2)
     .toUpperCase()
   return (
-    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 select-none shadow-sm">
+    <div className="w-7 h-7 rounded-md bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 flex items-center justify-center text-[11px] font-bold flex-shrink-0 select-none">
       {initials}
     </div>
   )
 }
 
-// ── Helper: relative date formatting ─────────────────────────────────────────
-/**
- * Converts an ISO date string to a short human-readable relative label
- * (e.g. "Just now", "3h ago", "Jun 20").
- */
 function formatRelativeDate(dateStr) {
   const date = new Date(dateStr)
   const diffMs = Date.now() - date.getTime()
@@ -92,35 +59,26 @@ function formatRelativeDate(dateStr) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  // ── State ──────────────────────────────────────────────────────────────────
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortOrder, setSortOrder] = useState('recent') // 'recent' | 'title'
+  const [sortOrder, setSortOrder] = useState('recent')
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
   const menuRef = useRef(null)
   const searchRef = useRef(null)
-
-  // ── Router / context ───────────────────────────────────────────────────────
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-
-  // ── Auth headers & User Data ───────────────────────────────────────────────
   const headers = useAuthHeaders()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
 
-  // ── Fetch documents on mount ───────────────────────────────────────────────
   useEffect(() => {
     fetchDocuments()
   }, [])
 
-  // ── Close user dropdown when clicking outside it ───────────────────────────
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -131,7 +89,6 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // ── Keyboard shortcut: ⌘K / Ctrl+K to focus search ────────────────────────
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -143,18 +100,10 @@ export default function Dashboard() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // ── Tab title shows document count ─────────────────────────────────────────
   useEffect(() => {
-    if (!loading) {
-      document.title = `(${documents.length}) Your Documents — CollabDocs`
-    }
-    return () => { document.title = 'CollabDocs — Real-Time Collaborative Editor' }
-  }, [documents.length, loading])
+    if (!loading) document.title = `Dashboard — CollabDocs`
+  }, [loading])
 
-  // ── API: load document list ────────────────────────────────────────────────
-  // Pass limit=500 so users with more than 20 documents (the server default)
-  // see all of them. The server caps at 500. A proper paginated UI can be
-  // added as a future enhancement.
   const fetchDocuments = async () => {
     try {
       const res = await axios.get(`${API}/documents?limit=500`, { headers })
@@ -167,7 +116,6 @@ export default function Dashboard() {
     }
   }
 
-  // ── API: create new document ───────────────────────────────────────────────
   const createDocument = async () => {
     setCreating(true)
     try {
@@ -179,9 +127,8 @@ export default function Dashboard() {
     }
   }
 
-  // ── API: delete document ───────────────────────────────────────────────────
   const handleDeleteDoc = async (id, e) => {
-    e.stopPropagation() // Prevent row click navigating to the document
+    e.stopPropagation()
     if (!window.confirm('Delete this document? This cannot be undone.')) return
     setDeletingId(id)
     try {
@@ -195,14 +142,12 @@ export default function Dashboard() {
     }
   }
 
-  // ── Auth: sign out ─────────────────────────────────────────────────────────
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     navigate('/login')
   }
 
-  // ── API: delete account ────────────────────────────────────────────────────
   const handleDeleteAccount = async () => {
     setShowUserMenu(false)
     if (!window.confirm('Delete your account and all documents permanently?')) return
@@ -211,88 +156,60 @@ export default function Dashboard() {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       navigate('/')
-      toast.success('Account deleted')
     } catch (err) {
       toast.error('Failed to delete account')
     }
   }
 
-  // ── Derived: filtered + sorted document list ─────────────────────────────
   const filteredDocs = documents
-    .filter(doc =>
-      (doc.title || 'Untitled Document').toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    .filter(doc => (doc.title || 'Untitled Document').toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => {
       if (sortOrder === 'title') {
         return (a.title || 'Untitled Document').localeCompare(b.title || 'Untitled Document')
       }
-      // Default: most recently edited first
       return new Date(b.updatedAt) - new Date(a.updatedAt)
     })
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0d0f14] transition-colors duration-200">
-
-      {/* ── Top navigation ── */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-[#111318] border-b border-gray-100 dark:border-white/[0.06]">
-        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.svg" alt="CollabDocs" className="h-6 w-auto" />
-            <span className="text-base font-semibold text-gray-900 dark:text-white tracking-tight">CollabDocs</span>
+    <div className="min-h-screen bg-white dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 transition-colors">
+      {/* Top Nav */}
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+        <div className="max-w-5xl mx-auto px-6 h-12 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-sm">
+            <img src="/logo.svg" alt="CollabDocs" className="h-5 w-auto" />
+            <span className="text-sm font-semibold tracking-tight">CollabDocs</span>
           </Link>
-
-          {/* Right actions */}
-          <div className="flex items-center gap-2">
-            {/* Theme toggle */}
+          <div className="flex items-center gap-1.5">
             <button
               onClick={toggleTheme}
-              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-              aria-label="Toggle theme"
+              className="p-1.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
             </button>
-
-            {/* User avatar + dropdown */}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setShowUserMenu(v => !v)}
-                className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                className="flex items-center gap-2 p-1 pl-2 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand transition-colors"
               >
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hidden sm:block">{user.name}</span>
                 <UserAvatar name={user.name} />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden sm:block">{user.name}</span>
               </button>
-
               {showUserMenu && (
-                <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-[#1e2432] rounded-xl border border-gray-100 dark:border-white/10 shadow-xl shadow-black/10 py-1.5 z-50 animate-fade-in-up">
-                  {/* User info */}
-                  <div className="px-3 py-2 mb-1">
-                    <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{user.name}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{user.email}</p>
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#18181b] rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm py-1 z-50 animate-slide-up origin-top-right">
+                  <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800/50">
+                    <p className="text-xs font-medium text-zinc-900 dark:text-zinc-100 truncate">{user.name}</p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>
                   </div>
-                  <div className="h-px bg-gray-100 dark:bg-white/10 mx-3 mb-1" />
-
-                  {/* Sign out */}
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <LogOut size={15} />
-                    Sign out
-                  </button>
-
-                  <div className="h-px bg-gray-100 dark:bg-white/10 mx-3 my-1" />
-
-                  {/* Delete account — destructive action, red colour */}
-                  <button
-                    onClick={handleDeleteAccount}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                  >
-                    <Trash2 size={15} />
-                    Delete account
-                  </button>
+                  <div className="py-1">
+                    <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50">
+                      <LogOut size={13} /> Sign out
+                    </button>
+                  </div>
+                  <div className="border-t border-zinc-100 dark:border-zinc-800/50 py-1">
+                    <button onClick={handleDeleteAccount} className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">
+                      <Trash2 size={13} /> Delete account
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -300,154 +217,116 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* ── Main content ── */}
-      <main className="max-w-5xl mx-auto px-6 pt-24 pb-16">
-
-        {/* Greeting + page header */}
-        <div className="flex items-start justify-between mb-8">
+      {/* Main Content */}
+      <main className="max-w-5xl mx-auto px-6 pt-12 pb-16">
+        <div className="flex items-end justify-between mb-8">
           <div>
-            <p className="text-sm font-medium text-gray-400 dark:text-gray-500 mb-0.5">
-              {getGreeting(user.name)}
-            </p>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Your Documents</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              {loading ? '…' : `${documents.length} document${documents.length !== 1 ? 's' : ''}`}
-            </p>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 mb-1">Documents</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{getGreeting(user.name)}</p>
           </div>
-
-          {/* Create new document */}
           <button
             onClick={createDocument}
             disabled={creating}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition-all disabled:opacity-60 shadow-sm hover:shadow-md hover:shadow-indigo-500/25 hover:-translate-y-0.5"
+            className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 font-medium px-4 py-2 rounded-md text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#09090b] disabled:opacity-50"
           >
             <Plus size={16} />
             {creating ? 'Creating…' : 'New document'}
           </button>
         </div>
 
-        {/* Search bar + sort — only shown when there are documents to filter */}
+        {/* Search & Filters */}
         {!loading && documents.length > 0 && (
-          <div className="flex gap-2 mb-5">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+          <div className="flex gap-3 mb-6">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
               <input
                 ref={searchRef}
                 type="text"
-                placeholder="Search documents… (⌘K)"
+                placeholder="Search (⌘K)"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 text-sm bg-white dark:bg-[#161b27] border border-gray-200 dark:border-white/[0.08] rounded-xl text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="w-full pl-9 pr-8 py-1.5 text-sm bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-md text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand transition-shadow"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xs"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 >
                   ✕
                 </button>
               )}
             </div>
-            {/* Sort toggle */}
             <button
               onClick={() => setSortOrder(s => s === 'recent' ? 'title' : 'recent')}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-[#161b27] rounded-xl text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-white/[0.15] hover:text-gray-700 dark:hover:text-gray-200 transition-all flex-shrink-0"
-              title={`Sort: ${sortOrder === 'recent' ? 'Last edited' : 'Title A–Z'}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-transparent rounded-md text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              <ArrowUpDown size={14} />
-              <span className="hidden sm:inline">{sortOrder === 'recent' ? 'Recent' : 'A–Z'}</span>
+              <ArrowUpDown size={13} />
+              <span className="hidden sm:inline">{sortOrder === 'recent' ? 'Recent' : 'Alphabetical'}</span>
             </button>
           </div>
         )}
 
-        {/* ── Document list / loading / empty state ── */}
+        {/* Document List */}
         {loading ? (
-          /* Skeleton loading rows */
-          <div className="space-y-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 bg-white dark:bg-[#161b27] rounded-xl border border-gray-100 dark:border-white/[0.06] animate-shimmer" />
+          <div className="space-y-1">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-12 bg-zinc-100 dark:bg-zinc-800/50 rounded-md animate-shimmer" />
             ))}
           </div>
-
         ) : documents.length === 0 ? (
-          /* ── Empty state ── */
-          <div className="text-center py-24 px-6">
-            {/* Gradient ring around the icon */}
-            <div className="relative w-20 h-20 mx-auto mb-6">
-              <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-indigo-400 to-violet-500 opacity-20 blur-lg" />
-              <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/60 dark:to-violet-950/60 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/40">
-                <FileText size={32} className="text-indigo-500 dark:text-indigo-400" />
-              </div>
+          <div className="flex flex-col items-center justify-center py-20 px-6 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
+            <div className="w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400">
+              <FileText size={24} />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 tracking-tight">No documents yet</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto mb-8 leading-relaxed">
-              Create your first document and invite collaborators to edit with you in real time.
-            </p>
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 mb-1">No documents</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-6 max-w-xs">Create a new document to start collaborating with your team.</p>
             <button
               onClick={createDocument}
-              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-all hover:shadow-md hover:shadow-indigo-500/25"
+              className="flex items-center gap-2 bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium px-4 py-2 rounded-md text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              <Plus size={16} />
-              Create first document
+              <Plus size={14} /> New document
             </button>
           </div>
-
         ) : filteredDocs.length === 0 ? (
-          /* ── No search results ── */
           <div className="text-center py-12">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              No documents matching <span className="font-semibold text-gray-700 dark:text-gray-300">"{searchQuery}"</span>
-            </p>
-            <button onClick={() => setSearchQuery('')} className="text-xs text-indigo-500 hover:underline mt-2">
-              Clear search
-            </button>
+            <p className="text-sm text-zinc-500">No documents found for "{searchQuery}"</p>
           </div>
-
         ) : (
-          /* ── Document rows with staggered fade-in ── */
-          <div className="bg-white dark:bg-[#161b27] rounded-2xl border border-gray-100 dark:border-white/[0.06] overflow-hidden divide-y divide-gray-50 dark:divide-white/[0.04] shadow-sm">
-            {filteredDocs.map((doc, idx) => (
-              <div
-                key={doc.id}
-                onClick={() => navigate(`/document/${doc.id}`)}
-                className="group flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors"
-                style={{
-                  // Stagger each row's entrance animation by 40 ms per row
-                  animation: `row-in 0.25s ease-out ${idx * 40}ms both`
-                }}
-              >
-                {/* Document icon — highlights to indigo on row hover */}
-                <div className="w-9 h-9 rounded-lg bg-gray-50 dark:bg-white/[0.06] border border-gray-100 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 text-gray-400 dark:text-gray-500 group-hover:border-indigo-200 dark:group-hover:border-indigo-900 group-hover:text-indigo-500 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/40 transition-all">
-                  <FileText size={17} />
+          <div className="flex flex-col border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-[#09090b]">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#18181b]/50 text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              <div>Name</div>
+              <div className="w-32 hidden sm:block">Last edited</div>
+              <div className="w-8"></div>
+            </div>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {filteredDocs.map((doc) => (
+                <div
+                  key={doc.id}
+                  onClick={() => navigate(`/document/${doc.id}`)}
+                  className="group grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-3 items-center cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText size={16} className="text-zinc-400 flex-shrink-0" />
+                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate group-hover:text-brand transition-colors">
+                      {searchQuery ? highlightMatch(doc.title || 'Untitled Document', searchQuery) : doc.title || 'Untitled Document'}
+                    </span>
+                  </div>
+                  <div className="w-32 hidden sm:block text-xs text-zinc-500 truncate">
+                    {formatRelativeDate(doc.updatedAt)}
+                  </div>
+                  <div className="w-8 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => handleDeleteDoc(doc.id, e)}
+                      disabled={deletingId === doc.id}
+                      className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:opacity-100"
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-
-                {/* Title + timestamp */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    {searchQuery
-                      ? highlightMatch(doc.title || 'Untitled Document', searchQuery)
-                      : doc.title || 'Untitled Document'
-                    }
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                    Edited {formatRelativeDate(doc.updatedAt)}
-                  </p>
-                </div>
-
-                {/* Row actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={(e) => handleDeleteDoc(doc.id, e)}
-                    disabled={deletingId === doc.id}
-                    className="p-1.5 text-gray-300 dark:text-gray-700 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                    title="Delete document"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                  <ChevronRight size={16} className="text-gray-300 dark:text-gray-700 group-hover:text-indigo-400 transition-colors" />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </main>
