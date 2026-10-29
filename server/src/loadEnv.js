@@ -1,17 +1,5 @@
 /**
- * loadEnv.js — Environment loader + startup validation.
- *
- * Loads .env variables and validates all required configuration before the
- * server starts accepting connections. If any required variable is missing or
- * too short, the process exits with a descriptive error message.
- *
- * Preventing the server from starting in a misconfigured state is always
- * better than discovering the misconfiguration from a production error.
- * Specifically:
- *  - JWT_SECRET missing → jwt.sign(payload, undefined) produces tokens that
- *    are effectively unverifiable/unsecured.
- *  - DATABASE_URL missing → Prisma connects to the wrong database or crashes
- *    on first query rather than at startup.
+ * Validates required environment variables on startup.
  */
 
 import dotenv from 'dotenv';

@@ -1,19 +1,8 @@
 /**
- * documents.js — /api/documents
- *
- * All mutating routes require a valid auth JWT (via `authenticate` middleware).
- * Share routes use a separate share-token JWT (type: 'share') and are public.
- *
- * Security hardening applied in this file:
- *  - HTML content is passed through an allowlist sanitizer before any write to
- *    the database, eliminating the XSS-via-shared-link attack vector.
- *  - Share tokens carry type: 'share'; the shared document route validates this
- *    claim so auth tokens cannot be used as share tokens and vice-versa.
- *  - Version restore is wrapped in a prisma.$transaction to prevent partial
- *    restores and concurrent versionNumber collisions.
+ * Document management routes.
+ * Handles CRUD operations, sharing permissions, and snapshot versioning.
  */
 
-// ── Imports ────────────────────────────────────────────────────────────────────
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../lib/prisma.js'
@@ -22,10 +11,7 @@ import { sanitizeHtml } from '../utils/sanitize.js'
 
 const router = express.Router()
 
-// ── GET / — List documents ─────────────────────────────────────────────────────
-// Returns all documents owned by the authenticated user, newest first.
-// Paginated: defaults to page=1, limit=20 (max 500).
-// The dashboard currently fetches with limit=500 to show all documents.
+// GET / — List user's documents
 router.get('/', authenticate, async (req, res) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page)  || 1)
@@ -61,6 +47,31 @@ router.post('/', authenticate, async (req, res) => {
       }
     })
     res.status(201).json(document)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── POST /:id/duplicate — Duplicate document ──────────────────────────────────
+router.post('/:id/duplicate', authenticate, async (req, res) => {
+  try {
+    const original = await prisma.document.findUnique({
+      where: { id: req.params.id }
+    })
+
+    if (!original) return res.status(404).json({ error: 'Document not found' })
+    if (original.ownerId !== req.userId) return res.status(403).json({ error: 'Access denied' })
+
+    const copy = await prisma.document.create({
+      data: {
+        title:   `${original.title} (Copy)`,
+        content: original.content,
+        ownerId: req.userId
+      }
+    })
+
+    res.status(201).json(copy)
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Server error' })
@@ -110,10 +121,7 @@ router.patch('/:id', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' })
     }
 
-    // Sanitize HTML content before persisting.
-    // sanitizeHtml is an allowlist-based sanitizer that strips <script> tags,
-    // event handlers, javascript: URIs, and any element not produced by Tiptap's
-    // StarterKit. Legitimate formatting (bold, italic, headings, etc.) is preserved.
+    // Strip potential XSS vectors before saving rich text
     const safeContent = content !== undefined ? sanitizeHtml(content) : undefined
 
     const updated = await prisma.document.update({
@@ -214,14 +222,9 @@ router.get('/shared/:shareToken', async (req, res) => {
   }
 })
 
-// ── VERSION HISTORY ────────────────────────────────────────────────────────────
-// Snapshots are point-in-time copies of a document's content and title.
+// ── Version History ────────────────────────────────────────────────────────────
 
-// POST /:id/snapshot — Save current state as a new version.
-// The route reads content from the database (not from the request body), so the
-// snapshot reflects what is actually persisted — not what the client thinks is saved.
-// Callers (Document.jsx saveSnapshot) must successfully complete saveDocument()
-// before calling this, and handle that error before calling /snapshot.
+// POST /:id/snapshot — Save current state as a new version
 router.post('/:id/snapshot', authenticate, async (req, res) => {
   try {
     const document = await prisma.document.findUnique({
@@ -231,8 +234,6 @@ router.post('/:id/snapshot', authenticate, async (req, res) => {
     if (!document) return res.status(404).json({ error: 'Document not found' })
     if (document.ownerId !== req.userId) return res.status(403).json({ error: 'Access denied' })
 
-    // findFirst + create are two operations — wrap in a transaction so a crash
-    // between them cannot leave us with a duplicate versionNumber.
     const snapshot = await prisma.$transaction(async (tx) => {
       const lastVersion = await tx.documentVersion.findFirst({
         where:   { documentId: req.params.id },
@@ -258,7 +259,7 @@ router.post('/:id/snapshot', authenticate, async (req, res) => {
   }
 })
 
-// GET /:id/versions — List all version summaries (no content, for the sidebar)
+// GET /:id/versions — List all version summaries (without content)
 router.get('/:id/versions', authenticate, async (req, res) => {
   try {
     const document = await prisma.document.findUnique({
@@ -299,17 +300,7 @@ router.get('/:id/versions/:versionId', authenticate, async (req, res) => {
   }
 })
 
-// POST /:id/versions/:versionId/restore — Roll back document to a saved version.
-//
-// Uses a single prisma.$transaction to atomically:
-//   1. Overwrite the document's content + title
-//   2. Create an audit snapshot labelled "Restored from Version N"
-//   3. Compute the new versionNumber inside the transaction (no race condition)
-//
-// Without the transaction, a crash between steps 1 and 2 would leave the
-// document restored with no audit record. Two concurrent restores would race
-// on the findFirst → create pair and violate the @@unique([documentId, versionNumber])
-// constraint.
+// POST /:id/versions/:versionId/restore — Roll back document to a saved version
 router.post('/:id/versions/:versionId/restore', authenticate, async (req, res) => {
   try {
     const document = await prisma.document.findUnique({

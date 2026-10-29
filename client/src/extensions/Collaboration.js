@@ -1,24 +1,6 @@
 /**
- * Collaboration.js — Tiptap extension that wires the ProseMirror collab plugin
- * into the editor and emits steps to the server on every local transaction.
- *
- * Why a custom extension instead of @tiptap/extension-collaboration:
- *   @tiptap/extension-collaboration is Yjs-based and cannot be used without a
- *   Yjs provider. We use the lower-level @tiptap/pm/collab utilities directly
- *   to implement a step-based protocol that works with our Socket.io server.
- *
- * What this extension does:
- *  1. Registers the ProseMirror `collab({ version })` plugin so ProseMirror
- *     tracks the local version and accumulates sendable steps.
- *  2. On every editor transaction (via `onTransaction`), checks if there are
- *     new steps to send and emits them to the server via the callback.
- *
- * The `isApplyingRemote` ref from useCollabSocket is passed in via storage to
- * suppress step emission when the transaction originates from applying remote
- * steps (which would otherwise cause an echo loop).
- *
- * Step deserialisation for received steps is handled in useCollabSocket using
- * Step.fromJSON from @tiptap/pm/transform.
+ * Tiptap extension integrating ProseMirror's collab plugin.
+ * Tracks local steps and forwards them to the socket server.
  */
 
 import { Extension } from '@tiptap/core'

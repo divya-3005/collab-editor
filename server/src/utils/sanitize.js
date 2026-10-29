@@ -1,21 +1,9 @@
 /**
- * sanitize.js — Server-side HTML allowlist sanitizer.
- *
- * Purpose: Prevent XSS when user-supplied document content is stored and later
- * rendered in other users' browsers (e.g. via a shared document link).
- *
- * Strategy: Allowlist only the exact tags and attributes produced by Tiptap's
- * StarterKit. Everything else — <script>, event handlers, javascript: URIs,
- * <iframe>, <object> — is stripped before the content reaches the database.
- *
- * This sanitizer runs on the server, not the client, so we use regex-based
- * parsing rather than a DOM parser (no DOM available in Node.js without jsdom).
- * The approach is intentionally conservative: when in doubt, strip the tag.
+ * HTML allowlist sanitizer for rich-text document content.
+ * Filters untrusted HTML tags, event handlers, and javascript: URIs.
  */
 
-// ── Allowlisted tags ──────────────────────────────────────────────────────────
-// Exactly the set that Tiptap StarterKit can produce. Any tag not in this set
-// is stripped (its inner text content may be preserved as a text node).
+// Allowlisted tags produced by Tiptap StarterKit
 const ALLOWED_TAGS = new Set([
   'p', 'br', 'hr',
   'strong', 'em', 's', 'code', 'mark',

@@ -1,25 +1,6 @@
 /**
- * useCollabSocket.js — Manages the Socket.io connection lifecycle and implements
- * the ProseMirror step-based collaboration protocol.
- *
- * Why this replaces content-update broadcasts:
- *   The previous architecture emitted full HTML on every keystroke via
- *   socket.emit('content-update', ...). This is last-write-wins: simultaneous
- *   edits silently overwrite each other. editor.setContent() also destroys
- *   cursor positions and undo history.
- *
- * New protocol:
- *   - sendableSteps(state) → serialise pending ProseMirror steps.
- *   - receiveTransaction(state, steps, clientIDs) → apply remote steps and
- *     rebase pending local steps using ProseMirror's Mapping system.
- *   - getVersion(state) → local step count, must match the server.
- *
- *   The server acts as a pure step sequencer; conflict resolution happens on
- *   the client using ProseMirror's own OT machinery, which correctly handles
- *   all step types (AddMarkStep, ReplaceAroundStep, etc.).
- *
- * The `isApplyingRemote` ref is shared with the Collaboration extension to
- * prevent remote steps from being echoed back to the server.
+ * useCollabSocket.js — Manages Socket.io lifecycle and ProseMirror step synchronization.
+ * Handles step sending, remote step reception and rebasing, and reconnect catch-up.
  */
 
 import { useEffect, useRef } from 'react'

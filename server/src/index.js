@@ -1,25 +1,8 @@
 /**
- * index.js — CollabDocs server entry point.
+ * Server entry point.
  *
- * Architecture:
- *   - Express  → REST API (auth, documents, version history)
- *   - Socket.io → Real-time WebSocket layer for collaborative editing
- *   - Collab module → Step-based collaboration protocol (replaces character-OT)
- *
- * Security:
- *   - All WebSocket connections require a valid auth JWT (io.use middleware).
- *   - All socket event handlers are wrapped in try/catch to prevent server
- *     crashes from malformed payloads.
- *
- * Collaboration protocol (replaces the previous content-update broadcast):
- *   - Clients send serialized ProseMirror steps via 'collab-steps'.
- *   - The server sequences them with monotonic version numbers and broadcasts
- *     to peers. The server itself does not interpret the step content — it acts
- *     as a reliable sequencer. ProseMirror on the client handles transformation
- *     and rebasing via the @tiptap/pm/collab utilities.
- *   - The full document HTML is still persisted to Postgres via REST autosave
- *     for recovery and version history; steps are kept in-memory for the
- *     current session only.
+ * Express REST API + Socket.io server for real-time collaborative editing.
+ * Sequences ProseMirror steps and manages rooms, presence, and document persistence.
  */
 
 // ── Env & Core ───────────────────────────────────────────────────────────────
@@ -47,7 +30,8 @@ import prisma from './lib/prisma.js'
 import {
   getCollabState,
   addSteps,
-  getStepsSince
+  getStepsSince,
+  evictDocument
 } from './ot/collab.js'
 
 // ── App & HTTP server ────────────────────────────────────────────────────────
@@ -105,9 +89,7 @@ app.use('/api/auth/google',  authLimiter,     googleAuthRoutes)
 app.use('/api/documents',    documentLimiter, documentRoutes)
 
 // ── WebSocket Authentication middleware ───────────────────────────────────────
-// Runs before io.on('connection'). Every socket must present a valid auth JWT.
-// This closes the unauthenticated WebSocket access vector that previously allowed
-// any client to join any document room and read or inject content.
+// Authenticate incoming socket connections via JWT (supports both auth and share tokens)
 io.use((socket, next) => {
   try {
     const token =
@@ -120,14 +102,21 @@ io.use((socket, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-    // Reject non-auth tokens (e.g. share tokens)
-    if (decoded.type !== 'auth') {
-      return next(new Error('Invalid token type'))
+    if (decoded.type === 'auth') {
+      socket.data.userId = decoded.userId
+      socket.data.tokenType = 'auth'
+      return next()
     }
 
-    // Attach userId to the socket so all handlers can reference it
-    socket.data.userId = decoded.userId
-    next()
+    if (decoded.type === 'share') {
+      socket.data.documentId = decoded.documentId
+      socket.data.permission = decoded.permission
+      socket.data.tokenType = 'share'
+      socket.data.userId = `guest-${socket.id.slice(0, 6)}`
+      return next()
+    }
+
+    return next(new Error('Invalid token type'))
   } catch {
     next(new Error('Invalid or expired token'))
   }
@@ -167,6 +156,11 @@ io.on('connection', (socket) => {
       const user       = typeof payload === 'object'  ? payload?.user : null
 
       if (!documentId) return
+
+      // Enforce document scope for share tokens
+      if (socket.data.tokenType === 'share' && socket.data.documentId !== documentId) {
+        return socket.emit('error', 'Unauthorized document access')
+      }
 
       socket.join(documentId)
       socket.data.currentDocumentId = documentId
@@ -231,6 +225,11 @@ io.on('connection', (socket) => {
       if (!rateLimiter()) return
       if (!documentId || !Array.isArray(steps) || steps.length === 0) return
 
+      // Read-only share link users cannot push edits
+      if (socket.data.tokenType === 'share' && socket.data.permission !== 'edit') {
+        return
+      }
+
       const state = getCollabState(documentId)
 
       // Version mismatch: client is behind. Tell them to sync first.
@@ -294,6 +293,25 @@ io.on('connection', (socket) => {
       })
     } catch (err) {
       console.error('cursor-move error:', err.message)
+    }
+  })
+
+  // ── Document Room Chat ────────────────────────────────────────────────────
+  socket.on('doc-chat', ({ documentId, text, sender, color }) => {
+    try {
+      if (!rateLimiter()) return
+      if (!documentId || !text?.trim()) return
+
+      const cleanText = text.trim().slice(0, 500)
+      io.to(documentId).emit('doc-chat', {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        text: cleanText,
+        sender: sender || 'Collaborator',
+        color: color || '#2563eb',
+        timestamp: Date.now()
+      })
+    } catch (err) {
+      console.error('doc-chat error:', err.message)
     }
   })
 

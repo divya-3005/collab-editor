@@ -2,13 +2,15 @@
 
 The collaboration engine allows multiple users to edit the same document concurrently without data loss or cursor jumping.
 
-## The Problem with Character-based OT
+## Why Step-Based OT Over Character-Based OT
 
-Previously, the editor attempted to synchronize using a custom Character-based Operational Transformation algorithm. However, rich-text editors (like Tiptap/ProseMirror) use a tree-based document model, not a flat string. Character-based OT cannot represent structural changes like wrapping a paragraph in a blockquote or converting a node into a list. This led to silent data corruption.
+Rich-text editors (such as ProseMirror and Tiptap) represent documents as a hierarchical node tree rather than a flat string. Traditional character-based Operational Transformation (operating strictly on `{ insert, delete, index }`) cannot correctly represent structural mutations such as adding marks (bold, italic), wrapping blocks in lists or blockquotes, or updating node attributes.
 
-## The Solution: ProseMirror Step Sync
+By leveraging ProseMirror's step-based collaboration model (`prosemirror-collab`), edits are represented as atomic `Step` objects that transform cleanly using ProseMirror's internal position mapping system.
 
-CollabDocs now uses ProseMirror's native central-authority collaborative editing protocol via `@tiptap/pm/collab`.
+## Collaboration Architecture
+
+The editor uses a central-authority step synchronization protocol:
 
 ### How it works
 

@@ -4,8 +4,7 @@
  * Responsibilities:
  *  - Auto-saves title + content every 3 seconds via PATCH /api/documents/:id.
  *  - Tracks `isDirty` (unsaved local changes exist) — used by beforeunload.
- *  - Tracks `saveError` — surfaces failed saves to the user instead of
- *    silently swallowing them (previous bug: empty catch block).
+ *  - Tracks `saveError` — surfaces failed saves to the user.
  *  - Exposes `saveDocument` so the parent can trigger a manual save before
  *    actions that depend on the database reflecting the current editor state
  *    (e.g. saveSnapshot). saveDocument throws on failure so callers can abort.

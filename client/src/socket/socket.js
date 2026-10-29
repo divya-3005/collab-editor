@@ -17,11 +17,16 @@ import { io } from 'socket.io-client'
 const API_URL    = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 const SOCKET_URL = API_URL.replace('/api', '')
 
+let activeToken = localStorage.getItem('token') || ''
+
+export function setSocketToken(token) {
+  activeToken = token || ''
+  socket.auth = { token: activeToken }
+}
+
 const socket = io(SOCKET_URL, {
   autoConnect: false,
-  // Provide auth lazily so the current token is used at connect time,
-  // not the token that existed when this module was first imported.
-  auth: (cb) => cb({ token: localStorage.getItem('token') || '' })
+  auth: (cb) => cb({ token: activeToken || localStorage.getItem('token') || '' })
 })
 
 export default socket

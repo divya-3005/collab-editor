@@ -1,135 +1,198 @@
-<div align="center">
-  <img src="https://via.placeholder.com/150?text=CollabDocs+Logo" alt="CollabDocs Logo" width="120" />
-  <h1>CollabDocs</h1>
-  <p>A production-ready, real-time collaborative rich-text editor.</p>
+# CollabDocs — Real-Time Collaborative Rich-Text Editor
 
-  <p>
-    <a href="https://collabdocs-demo.example.com">View Demo</a> · 
-    <a href="https://github.com/yourusername/collabdocs/issues">Report Bug</a> · 
-    <a href="https://github.com/yourusername/collabdocs/issues">Request Feature</a>
-  </p>
-</div>
+A full-stack, real-time collaborative document editor inspired by Google Docs and Notion. Built from scratch to explore distributed state synchronization, Operational Transformation (OT) in rich-text trees, and WebSocket architectures.
+
+Developed by **Divya Singh** as an engineering deep dive into real-time systems.
 
 ---
 
-## 📖 Overview
+## 💡 Why I Built This
 
-CollabDocs is a high-performance, real-time collaborative text editor built with **React, Tiptap, Node.js, Express, Socket.io, and PostgreSQL**. 
+Most collaborative editor tutorials implement naive string operations (`insert(index, char)` / `delete(index)`) over WebSockets or simple last-write-wins broadcasts. However, real-world rich-text editors (like Google Docs or Notion) represent documents as hierarchical node trees (paragraphs, lists, headings, inline marks) where simple string offsets break down immediately.
 
-Designed as a modern alternative to Google Docs, it leverages the **ProseMirror step-based Operational Transformation (OT)** algorithm to guarantee conflict-free, concurrent rich-text editing with zero data corruption. 
+I built CollabDocs to tackle the real challenges of collaborative software:
+1. **Rich-Text Concurrency**: Implementing ProseMirror's central-authority step rebasing protocol so concurrent formatting and structural edits never corrupt the document tree.
+2. **State Decoupling in React**: Structuring complex editor state into focused hooks so high-frequency cursor updates and step sync never trigger full editor re-renders.
+3. **Hybrid Persistence Architecture**: Combining in-memory ring buffers for low-latency socket relay with debounced REST autosave to PostgreSQL for long-term durability.
+4. **Application Security**: Hardening rich-text inputs against XSS attacks, preventing JWT privilege confusion, and securing OAuth flows against credential leakage.
 
-It is designed for production with defense-in-depth security, strict type validations, REST API autosave durability, and a decoupled React hook architecture.
-
-<div align="center">
-  <img src="https://via.placeholder.com/800x450?text=App+Screenshot" alt="CollabDocs Screenshot" width="800" />
-</div>
+---
 
 ## ✨ Features
 
-- **Real-Time Collaboration**: Sub-10ms latency updates via WebSockets.
-- **Conflict-Free Edits**: ProseMirror's central-authority step rebasing handles concurrent formatting (bolding, lists, headings) gracefully.
-- **Live Presence**: Multi-colored remote cursors with user identification.
-- **Snapshot Versioning**: Save, preview, and atomically restore historical document states.
-- **Secure Sharing**: Generate view-only or edit-enabled share links.
-- **Robust Security**: Strict JWT type segregation (Auth vs Share tokens), XSS HTML sanitization, rate limiting, and backend-to-frontend OAuth token exchanges.
+- **Concurrent Multi-User Editing**: Multiple collaborators can edit the same document simultaneously with conflict-free step rebasing via WebSockets.
+- **Live Remote Cursors & Presence**: Visualizes remote collaborators' cursors, selection points, and names in real time using ProseMirror DOM decorations.
+- **Real-Time Room Chat**: In-document discussion panel allowing collaborators to communicate in real time during editing sessions.
+- **Snapshot Version History & Rollback**: Create point-in-time document snapshots, preview historical versions in read-only mode, and perform atomic rollbacks via PostgreSQL transactions.
+- **Document Export**: One-click export to Markdown (`.md`), Plain Text (`.txt`), HTML (`.html`), or Print/PDF.
+- **Document Organization**: Card Grid vs. Table List views, Starred favorites filter, and one-click document duplication.
+- **Live Document Metrics**: Live word count, character count, and estimated reading time statistics.
+- **Zen Focus Mode & Keyboard Shortcuts**: Distraction-free full-screen writing view and interactive shortcuts cheat sheet (`?`).
+- **Granular Document Sharing**: Generate view-only or edit-enabled share links protected by distinct JWT type claims, with full guest collaboration support.
+- **Autosave & Unsaved Changes Guard**: Debounced background persistence to PostgreSQL with dirty-state tracking and `beforeunload` warnings.
+- **Google OAuth 2.0 & Email/Password Auth**: Secure user authentication supporting both Google sign-in (via one-time exchange codes) and bcrypt-hashed password credentials.
+- **Dark / Light Mode**: Clean, distraction-free interface built with Tailwind CSS.
 
-## 🛠 Technology Stack
+---
 
-**Frontend**
-- React 19
-- Vite
-- Tiptap / ProseMirror (`@tiptap/react`, `prosemirror-collab`)
-- Tailwind CSS
-- React Router DOM
+## 🏛️ System Architecture
 
-**Backend**
-- Node.js & Express
-- Socket.io (Real-time engine)
-- Prisma ORM
-- PostgreSQL
-- Passport.js (Google OAuth 2.0)
+```text
+ ┌─────────────────────────────────────────────────────────────┐
+ │                        React Client                         │
+ │                                                             │
+ │   Tiptap / ProseMirror Editor                               │
+ │   ├── prosemirror-collab  ── (local unconfirmed steps)       │
+ │   └── LiveCursors Plugin  ── (remote cursor decorations)   │
+ └──────────────┬──────────────────────────────┬───────────────┘
+                │                              │
+         Socket.io (Steps)               REST (Autosave / CRUD)
+                │                              │
+                ▼                              ▼
+ ┌──────────────────────────────┐    ┌───────────────────────────┐
+ │   Node.js / Express Server   │    │  Express REST Controller  │
+ │                              │    │                           │
+ │   Central Step Sequencer     │    │  • Document CRUD          │
+ │   • Assigns version numbers  │    │  • Version Snapshots      │
+ │   • Broadcasts to peers      │    │  • HTML Sanitizer (XSS)   │
+ │   • In-memory ring buffer    │    │  • Share Link Tokens      │
+ └──────────────────────────────┘    └─────────────┬─────────────┘
+                                                   │
+                                            Prisma ORM
+                                                   │
+                                                   ▼
+                                     ┌───────────────────────────┐
+                                     │    PostgreSQL Database    │
+                                     │                           │
+                                     │  • Users                  │
+                                     │  • Documents              │
+                                     │  • DocumentVersions       │
+                                     └───────────────────────────┘
+```
 
-## 🚀 Installation & Local Development
+### 1. Central-Authority Step Sequencing
+- When User A types, ProseMirror generates an atomic `Step` (e.g. `ReplaceStep`, `AddMarkStep`).
+- The step is applied optimistically to User A's editor view while pending confirmation.
+- The client emits `collab-steps` with its current version number to the server.
+- The server acts as an authoritative sequencer: if the client's version matches current server state, the server appends the steps, increments the document version, and broadcasts them to peers.
+- If the version is stale (another peer submitted first), the server asks the client to catch up; the client fetches the missing steps, rebases its pending local steps on top of them via `receiveTransaction()`, and retries.
+
+### 2. Decoupled Frontend Hook Pipeline
+To avoid the infinite re-render loops common in complex React real-time apps, `Document.jsx` delegates responsibilities across modular custom hooks:
+- `useDocumentData`: Initial document REST fetch and title state.
+- `useCollabSocket`: Socket.io lifecycle, connection state, and ProseMirror step dispatch.
+- `usePresence`: Tracks connected remote peers, cursor coordinates, and label auto-hide timers.
+- `useAutoSave`: Debounced background persistence, keyboard shortcut (⌘S / Ctrl+S), and dirty state tracking.
+- `useVersionHistory`: Snapshot capture, read-only preview mode, and atomic rollbacks.
+
+### 3. Security & Data Protection
+- **XSS Allowlist Sanitization**: Rich-text HTML inputs are validated through a strict server-side allowlist (`utils/sanitize.js`) before database writes, stripping `<script>` tags, inline event listeners (`onclick`), and dangerous schemes (`javascript:`).
+- **JWT Claim Segregation**: Auth tokens (`type: 'auth'`) and share tokens (`type: 'share'`) are cryptographically distinct. The WebSocket middleware and protected routes reject share tokens to prevent unauthorized account access.
+- **Secure OAuth Exchange**: Google OAuth uses a short-lived, single-use server exchange code rather than exposing JWTs in URL query parameters.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend**: React 19, Tiptap / ProseMirror (`@tiptap/react`, `prosemirror-collab`), Vite, Tailwind CSS, Lucide Icons, Axios, React Hot Toast
+- **Backend**: Node.js, Express, Socket.io, Prisma ORM, Passport.js (Google OAuth 2.0), bcryptjs, jsonwebtoken, Helmet, express-rate-limit
+- **Database**: PostgreSQL
+- **Testing & Tooling**: Node.js test runner (`node:test`), Docker Compose
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js (v18+)
+- PostgreSQL (local instance or hosted database like Supabase / Neon / Railway)
+- (Optional) Docker & Docker Compose
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/collabdocs.git
-cd collabdocs
+git clone https://github.com/divya-3005/collab-editor.git
+cd collab-editor
 ```
 
-### 2. Configure Environment
-Copy the example environment file and fill in your secrets (Database URL, Google OAuth credentials, and a secure JWT secret).
+### 2. Configure Environment Variables
+Copy the example environment file for the server:
 ```bash
 cp server/.env.example server/.env
 ```
-> **Note**: The backend will deliberately refuse to start if `JWT_SECRET` or `DATABASE_URL` are missing or malformed to prevent insecure boots.
 
-### 3. Install Dependencies
-```bash
-# In the client directory
-cd client
-npm install
+Configure `server/.env`:
+```env
+PORT=3001
+CLIENT_URL=http://localhost:5173
+DATABASE_URL="postgresql://username:password@localhost:5432/collabdocs?schema=public"
+JWT_SECRET="your-32-character-or-longer-secret-key-here"
 
-# In the server directory
-cd ../server
-npm install
+# Optional: Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+GOOGLE_CALLBACK_URL="http://localhost:3001/api/auth/google/callback"
 ```
 
-### 4. Database Setup
-Ensure PostgreSQL is running locally, then push the Prisma schema:
+Configure `client/.env` (optional, defaults to `http://localhost:3001/api`):
+```env
+VITE_API_URL=http://localhost:3001/api
+```
+
+### 3. Install Dependencies & Set Up Database
 ```bash
+# Setup server
+cd server
+npm install
 npx prisma db push
+
+# Setup client
+cd ../client
+npm install
 ```
 
-### 5. Start Development Servers
-Start both the client and server concurrently.
-```bash
-# Client (Terminal 1)
-cd client
-npm run dev
+### 4. Run the Development Servers
+Open two terminal tabs:
 
-# Server (Terminal 2)
+**Terminal 1 (Backend):**
+```bash
 cd server
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173`.
+**Terminal 2 (Frontend):**
+```bash
+cd client
+npm run dev
+```
 
-## 🏗 Architecture & Internal Documentation
+Open `http://localhost:5173` in your browser. Open a second browser window (or incognito) to test multi-user real-time collaboration.
 
-CollabDocs avoids spaghetti state by heavily decoupling logic into focused modules. Read the detailed documentation in the `/docs` folder:
+### 🐳 Running with Docker Compose (Alternative)
+If you have Docker installed:
+```bash
+docker compose up --build
+```
 
-- [Frontend Hook Architecture](docs/architecture.md)
-- [ProseMirror Step-Sync Protocol](docs/collaboration.md)
-- [Security Model & Threat Mitigation](docs/security.md)
-- [REST API & Socket Events](docs/api.md)
-- [Database Schema](docs/database.md)
-- [Deployment Guide & Horizontal Scaling Constraints](docs/deployment.md)
-
-## 🐳 Docker (Optional)
-*A `Dockerfile` and `docker-compose.yml` are planned for v1.1.0 to streamline local database and server orchestration.*
+---
 
 ## 🧪 Testing
-The server includes native Node.js tests for critical security utilities (like the HTML sanitizer).
+
+Run server unit tests (including HTML sanitization security tests):
 ```bash
 cd server
-npm run test
+npm test
 ```
 
-## 📈 Future Roadmap
-- [ ] Guest anonymous JWT issuing for shared links.
-- [ ] Redis Pub/Sub adapter for multi-node horizontal scaling.
-- [ ] Client-side cursor throttle tuning based on network latency.
-- [ ] Export to PDF / Markdown functionality.
+---
 
-## 🤝 Contributing
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-Please review our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+## 📝 Key Learnings & Takeaways
 
-## 🛡 License
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+- **Operational Transformation is inherently tied to the document model**: Attempting to treat rich text as a sequence of character insertions and deletions inevitably fails when users apply bolding, create headings, or manipulate lists. Tying the synchronization protocol to ProseMirror's native `Step` abstractions provides robust, mathematically sound convergence.
+- **Separation between volatile collaboration and persistent storage**: A high-performance real-time app cannot execute database writes on every keystroke. Using in-memory ring buffers for low-latency WebSocket step relays combined with debounced REST autosaves provides both sub-10ms editing and reliable durability.
+- **Careful transaction boundaries in relational stores**: Rollbacks and snapshot creation must be atomic. Wrapping version updates and audit snapshot writes in Prisma transactions (`tx`) eliminated race conditions and duplicate version constraints.
 
-## 🙏 Acknowledgements
-- [Tiptap](https://tiptap.dev/) & [ProseMirror](https://prosemirror.net/) for the incredible editing framework.
-- [Socket.io](https://socket.io/)
-- [Tailwind CSS](https://tailwindcss.com/)
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

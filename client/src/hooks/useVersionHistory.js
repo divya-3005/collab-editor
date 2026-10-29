@@ -8,9 +8,7 @@
  *  - Exit preview and reload the live document.
  *  - Restore a version (atomic on the server via $transaction).
  *
- * Reliability fix: saveSnapshot now passes `throwOnSaveFailure: true` so that
- * if the preceding saveDocument fails (e.g. network error), the snapshot is
- * not created from stale database content. The error is surfaced to the user.
+ *  - Save snapshots after syncing current document state to the database.
  *
  * Does NOT own: editor state, socket connections, autosave interval.
  */

@@ -36,11 +36,8 @@ export default function AuthCallback() {
     const user   = params.get('user')
 
     if (!code) {
-      // No code: either a legacy URL with a direct ?token param (old flow),
-      // or the user navigated here directly. Fall back to login.
       const legacyToken = params.get('token')
       if (legacyToken && user) {
-        // Legacy path — still functional; will be removed once all sessions expire
         localStorage.setItem('token', legacyToken)
         localStorage.setItem('user', user)
         navigate('/dashboard', { replace: true })

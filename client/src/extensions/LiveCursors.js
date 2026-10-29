@@ -1,22 +1,6 @@
 /**
  * LiveCursors — Tiptap extension for rendering remote users' cursor positions.
- *
- * Technique: ProseMirror Decorations
- *   ProseMirror has a Decoration API that lets plugins paint arbitrary DOM nodes
- *   at specific positions in the document without modifying the document itself.
- *   We use `Decoration.widget` to insert a coloured cursor caret and name label
- *   at each remote user's last-known selection position.
- *
- * Data flow:
- *   1. Server relays "cursor-move" events with { socketId, position, name, color }
- *   2. Document.jsx updates a `remoteUsers` Map and syncs it into this extension's
- *      storage via `editor.storage.liveCursors.cursors = remoteUsers`
- *   3. Document.jsx then dispatches a transaction with this plugin's key as metadata.
- *   4. The plugin's `apply` handler receives the metadata, rebuilds the DecorationSet,
- *      and ProseMirror re-renders the cursor widgets in the correct positions.
- *
- * CSS classes used: .collaboration-cursor__caret, .collaboration-cursor__label
- * (defined in index.css)
+ * Uses ProseMirror Decoration widgets to render colored carets and user name tags.
  */
 
 import { Extension } from '@tiptap/core';

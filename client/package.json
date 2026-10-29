@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "React and Tiptap frontend for CollabDocs.",
   "type": "module",
-  "author": "CollabDocs Contributors",
+  "author": "Divya Singh",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/collabdocs.git"
+    "url": "https://github.com/divya-3005/collab-editor.git"
   },
   "scripts": {
     "dev": "vite",

@@ -1,22 +1,10 @@
 /**
- * googleAuth.js — Google OAuth 2.0 strategy and callback routes.
+ * Google OAuth 2.0 authentication routes.
  *
- * Flow:
- *  1. GET /api/auth/google       → redirects user to Google consent screen
- *  2. Google redirects back to   GET /api/auth/google/callback
- *  3. After success: server issues a one-time exchange code (stored in memory,
- *     60-second TTL, single-use) and redirects the browser to:
- *     CLIENT_URL/auth/callback?code=<hex>
- *  4. The client POSTs the code to POST /api/auth/google/exchange, which
- *     returns the JWT in the response body (never in a URL).
- *
- * Security improvements vs. original:
- *  - JWT is never placed in a URL query parameter (prevents browser history /
- *    server log / Referer header leakage).
- *  - Google OAuth users are stored with a cryptographically random password
- *    placeholder instead of the literal string 'google-oauth', so a database
- *    breach does not reveal which accounts use OAuth.
- *  - Issued tokens carry type: 'auth' for the middleware type-guard.
+ * Implements a secure one-time code exchange pattern:
+ * 1. Google redirects back to callback endpoint.
+ * 2. Server generates a short-lived random exchange code and redirects frontend.
+ * 3. Frontend exchanges code via POST body to receive JWT without URL leakage.
  */
 
 import express from 'express'
@@ -29,8 +17,7 @@ import prisma from '../lib/prisma.js'
 const router = express.Router()
 
 // ── One-time code store ───────────────────────────────────────────────────────
-// Maps a random hex code → { token, expiresAt }.
-// Codes are single-use and expire after 60 seconds.
+// Maps a random hex code → { token, expiresAt }. Single-use, 60s TTL.
 const pendingCodes = new Map()
 
 function createExchangeCode(token) {
@@ -39,7 +26,6 @@ function createExchangeCode(token) {
     token,
     expiresAt: Date.now() + 60_000
   })
-  // Auto-cleanup: remove the entry after 70 seconds even if never consumed
   setTimeout(() => pendingCodes.delete(code), 70_000)
   return code
 }
@@ -58,11 +44,7 @@ passport.use(new GoogleStrategy({
     let user = await prisma.user.findUnique({ where: { email } })
 
     if (!user) {
-      // Use a cryptographically random placeholder — not the literal string
-      // 'google-oauth' — so a database dump does not expose OAuth account
-      // identifiers and bcrypt.compare will always safely return false.
       const randomPassword = crypto.randomBytes(32).toString('hex')
-
       user = await prisma.user.create({
         data: { email, name, password: randomPassword }
       })

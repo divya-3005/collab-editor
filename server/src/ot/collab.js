@@ -1,50 +1,17 @@
 /**
- * collab.js — Server-side collaboration step sequencer.
+ * collab.js — Server-side ProseMirror collaboration step sequencer.
  *
- * Why this replaces the character-OT engine:
- *   The previous engine (ot/server.js + ot/transform.js) assumed a flat,
- *   plain-text string model: operations were { type: 'insert'|'delete', position, character }.
- *   Tiptap uses ProseMirror, whose document model is a typed node tree where:
- *     - Positions count both characters AND node open/close tokens.
- *     - A single user action can produce AddMarkStep, ReplaceAroundStep,
- *       AttrStep, etc. — none of which map to insert/delete on a flat string.
- *   The character-OT engine was therefore incapable of correctly transforming
- *   any rich-text operation (bold, headings, lists, blockquotes, links, etc.).
- *
- * New architecture:
- *   The server is a pure step sequencer. It does NOT interpret ProseMirror step
- *   content — it only assigns monotonically increasing version numbers to step
- *   batches and relays them to peers in the correct order.
- *
- *   Conflict resolution (OT) happens entirely on the client using ProseMirror's
- *   own @tiptap/pm/collab utilities (sendableSteps + receiveTransaction), which
- *   correctly transform all ProseMirror step types using ProseMirror's Mapping
- *   system. This is the correct tool for the job: ProseMirror's mapping accounts
- *   for node tokens in its position arithmetic, which our ±1 arithmetic did not.
- *
- * Protocol:
- *   - Client sends: { documentId, version, steps: StepJSON[], clientID }
- *   - If client.version === server.version → accept steps, increment version,
- *     broadcast to peers, ack the sender.
- *   - If client.version < server.version → reject, send missing steps so the
- *     client can rebase its pending steps and retry.
- *
- * Persistence:
- *   Steps are stored in-memory for the duration of a session. The REST autosave
- *   (PATCH /api/documents/:id every 3 seconds) persists the full document HTML
- *   to Postgres, providing durable recovery without requiring the server to
- *   interpret or store individual steps. On a server restart, clients reconnect
- *   and fetch the latest document content via the REST API.
- *
- *   The in-memory step buffer (MAX_STEPS_PER_DOC) allows clients that briefly
- *   disconnect (network blip, tab sleep) to catch up without a full reload,
- *   while bounding memory growth per document.
+ * Implements a central-authority sequencing model:
+ * - The server does not execute or interpret ProseMirror step content.
+ * - It assigns monotonic version numbers to incoming step batches and relays
+ *   them to connected peers in arrival order.
+ * - If a client submits steps against an outdated version, the server rejects
+ *   the submission and provides the missing steps so the client can rebase.
+ * - Steps are buffered in-memory for active sessions, while durable document
+ *   snapshots are persisted to PostgreSQL via autosave.
  */
 
 // Maximum steps to keep in memory per document.
-// Steps older than this are evicted. A client whose last known version is before
-// the oldest buffered step will receive a 'collab-full-sync' event instructing
-// it to reload the document content from the REST API instead.
 const MAX_STEPS_PER_DOC = 500
 
 // Map<documentId, CollabState>
